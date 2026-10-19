@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Glow – menu bar mockup</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 700px at 15% 85%, #3b2a6b 0%, transparent 60%),
+      radial-gradient(900px 600px at 85% 20%, #0f4c5c 0%, transparent 60%),
+      linear-gradient(160deg, #141826 0%, #1d1530 100%);
+    color: #fff;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  /* ---------- macOS menu bar ---------- */
+  .menubar {
+    height: 28px;
+    background: rgba(20, 20, 30, 0.45);
+    backdrop-filter: blur(30px) saturate(160%);
+    -webkit-backdrop-filter: blur(30px) saturate(160%);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; font-size: 13px; font-weight: 500;
+    position: relative; z-index: 5;
+  }
+  .menubar .left { display: flex; gap: 18px; align-items: center; }
+  .menubar .left b { font-weight: 700; }
+  .menubar .right { display: flex; gap: 16px; align-items: center; opacity: .95; }
+  .mb-icon { width: 16px; height: 16px; opacity: .9; }
+  .glow-item {
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 22px; border-radius: 5px;
+    background: rgba(255,255,255,.22); cursor: pointer;
+  }
+
+  /* ---------- Layout ---------- */
+  .stage { position: relative; padding: 6px 40px 60px; min-height: 680px; }
+  .anchor { position: absolute; top: 0; }
+  /* little pointer from popover to the icon */
+  .popover::before { display: none;
+    content: ""; position: absolute; top: -7px; right: 128px;
+    width: 14px; height: 14px; transform: rotate(45deg);
+    background: inherit; border-left: 1px solid var(--border); border-top: 1px solid var(--border);
+    border-radius: 3px 0 0 0;
+  }
+
+  /* ---------- Popover ---------- */
+  .popover {
+    --border: rgba(255,255,255,.10);
+    --text: #f5f5f7;
+    --muted: rgba(235,235,245,.55);
+    --tile-off: rgba(255,255,255,.06);
+    --tile-off-hover: rgba(255,255,255,.10);
+    --menu-bg: rgba(44,44,52,.92);
+    position: relative;
+    width: 372px;
+    margin-top: 14px;
+    background: rgba(30, 30, 38, 0.72);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 0 0 .5px rgba(0,0,0,.6);
+    color: var(--text);
+    padding: 14px 14px 10px;
+    transition: background .3s, color .3s;
+  }
+  .popover.light {
+    --border: rgba(0,0,0,.08);
+    --text: #1d1d1f;
+    --muted: rgba(60,60,67,.6);
+    --tile-off: rgba(0,0,0,.05);
+    --tile-off-hover: rgba(0,0,0,.08);
+    --menu-bg: rgba(250,250,252,.96);
+    background: rgba(246, 246, 248, 0.82);
+  }
+
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 2px 4px 12px;
+  }
+  .header h1 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+  .header .sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+
+  /* All off split control */
+  .alloff-wrap { position: relative; }
+  .alloff {
+    display: flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 10px 0 12px; border-radius: 999px;
+    background: var(--tile-off-hover); border: 1px solid var(--border);
+    color: var(--text); font: 600 12px var(--font); cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+  .alloff:hover { background: rgba(127,127,127,.22); }
+  .alloff:active { transform: scale(.97); }
+  .alloff svg { width: 10px; height: 10px; opacity: .7; }
+  .countdown {
+    display: none; align-items: center; gap: 8px;
+    height: 28px; padding: 0 6px 0 12px; border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255,159,10,.25), rgba(255,159,10,.12));
+    border: 1px solid rgba(255,159,10,.45);
+    font: 600 12px var(--font); color: #ffb340;
+    font-variant-numeric: tabular-nums;
+  }
+  .popover.light .countdown { color: #c26a00; }
+  .countdown .x {
+    width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(255,159,10,.25); color: inherit; font-size: 11px; line-height: 18px;
+  }
+  .menu {
+    position: absolute; right: 0; top: 34px; width: 178px; z-index: 10;
+    background: var(--menu-bg);
+    backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+    border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.4);
+    padding: 5px; display: none;
+    animation: pop .14s ease-out;
+  }
+  .menu.open { display: block; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+  .menu .label { font-size: 11px; color: var(--muted); padding: 6px 10px 4px; }
+  .menu button {
+    display: flex; justify-content: space-between; width: 100%;
+    background: none; border: none; color: var(--text);
+    font: 500 13px var(--font); padding: 7px 10px; border-radius: 7px; cursor: pointer; text-align: left;
+  }
+  .menu button:hover { background: #0a84ff; color: #fff; }
+  .menu button span.k { color: var(--muted); font-size: 12px; }
+  .menu button:hover span.k { color: rgba(255,255,255,.8); }
+  .menu hr { border: none; height: 1px; background: var(--border); margin: 4px 6px; }
+
+  /* Rooms + tiles */
+  .scroll { max-height: 470px; overflow-y: auto; padding: 0 2px; margin: 0 -2px; }
+  .scroll::-webkit-scrollbar { width: 0; }
+  .room { margin-bottom: 14px; }
+  .room-title {
+    font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); padding: 0 4px 7px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+  .tile {
+    position: relative; height: 82px; border-radius: 16px; overflow: hidden;
+    background: var(--tile-off); cursor: pointer;
+    border: 1px solid var(--border);
+    transition: background .35s, box-shadow .35s, transform .12s;
+    touch-action: none;
+  }
+  .tile:hover { background: var(--tile-off-hover); }
+  .tile:active { transform: scale(.97); }
+  .tile .fill {
+    position: absolute; inset: 0; width: 0%;
+    background: linear-gradient(90deg, var(--c1), var(--c2));
+    transition: width .35s cubic-bezier(.2,.8,.2,1), opacity .35s;
+    opacity: 0;
+  }
+  .tile.dragging .fill { transition: none; }
+  .tile .base {
+    position: absolute; inset: 0; opacity: 0; transition: opacity .35s;
+    background: var(--c1); filter: saturate(.6) brightness(.55);
+  }
+  .tile.on .fill { opacity: 1; }
+  .tile.on .base { opacity: 1; background: color-mix(in srgb, var(--c2) 62%, #3a3a44); filter: none; }
+  .tile.on { box-shadow: 0 6px 22px -6px var(--glow); border-color: transparent; }
+  .tile .content {
+    position: relative; height: 100%; padding: 10px 11px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .tile .bulb {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(127,127,127,.18); transition: background .35s;
+  }
+  .tile .bulb svg { width: 14px; height: 14px; fill: var(--muted); transition: fill .35s; }
+  .tile.on .bulb { background: rgba(255,255,255,.6); }
+  .tile.on .bulb svg { fill: rgba(27,27,31,.8); }
+  .tile .name { font-size: 12.5px; font-weight: 600; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .pct { font-size: 11px; color: var(--muted); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .tile.on .name { color: #1b1b1f; }
+  .tile.on .pct { color: rgba(27,27,31,.65); }
+  .tile.unreachable { opacity: .45; cursor: default; }
+  .tile.unreachable .pct { font-style: italic; }
+
+  .footer {
+    display: flex; justify-content: space-between; align-items: center;
+    border-top: 1px solid var(--border); margin-top: 2px; padding: 9px 4px 2px;
+    font-size: 11.5px; color: var(--muted);
+  }
+  .footer .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #30d158; margin-right: 6px; box-shadow: 0 0 6px #30d158; }
+  .footer svg { width: 15px; height: 15px; fill: var(--muted); cursor: pointer; }
+
+  /* context menu */
+  .ctx { position: fixed; z-index: 50; width: 170px; display: none; }
+  .ctx.open { display: block; }
+
+  /* ---------- Notes panel ---------- */
+  .notes {
+    width: 330px; margin-top: 30px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 16px; padding: 20px 22px; font-size: 13.5px; line-height: 1.55;
+    color: rgba(255,255,255,.85);
+  }
+  .notes h2 { font-size: 17px; margin-bottom: 4px; }
+  .notes .tag { font-size: 12px; color: rgba(255,255,255,.5); margin-bottom: 16px; }
+  .notes ul { list-style: none; }
+  .notes li { padding: 8px 0; border-top: 1px solid rgba(255,255,255,.07); display: flex; gap: 10px; }
+  .notes li:first-child { border-top: none; }
+  .notes li .ic { width: 22px; flex: none; text-align: center; }
+  .notes .toggle {
+    margin-top: 14px; display: flex; gap: 6px;
+  }
+  .notes .toggle button {
+    flex: 1; padding: 7px; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.15); background: transparent; color: #fff; font: 500 12px var(--font);
+  }
+  .notes .toggle button.active { background: rgba(255,255,255,.15); }
+  .later {
+    margin-top: 14px; font-size: 12px; color: rgba(255,255,255,.5);
+    border-top: 1px dashed rgba(255,255,255,.15); padding-top: 12px;
+  }
+</style>
+</head>
+<body>
+
+<!-- macOS menu bar -->
+<div class="menubar">
+  <div class="left">
+    <span style="font-size:15px"></span>
+    <b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span>
+  </div>
+  <div class="right">
+    <div class="glow-item" title="Glow">
+      <svg class="mb-icon" viewBox="0 0 24 24" id="mbBulb"><path fill="#fff" d="M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2Zm-2.5 18h5a.5.5 0 0 1 .5.5v.5a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-.5a.5.5 0 0 1 .5-.5Z"/></svg>
+    </div>
+    <svg class="mb-icon" viewBox="0 0 24 24"><path fill="#fff" d="M12 18.5a1.75 1.75 0 1 1 0 3.5 1.75 1.75 0 0 1 0-3.5Zm0-5.5c2.2 0 4.2.9 5.6 2.4l-1.5 1.4A5.7 5.7 0 0 0 12 15c-1.6 0-3.1.7-4.1 1.8l-1.5-1.4A7.7 7.7 0 0 1 12 13Zm0-5c3.6 0 6.9 1.5 9.2 3.9l-1.5 1.4A10.6 10.6 0 0 0 12 10c-3 0-5.8 1.3-7.7 3.3l-1.5-1.4A12.6 12.6 0 0 1 12 8Z"/></svg>
+    <svg class="mb-icon" viewBox="0 0 24 24"><rect x="2" y="7" width="18" height="10" rx="3" fill="none" stroke="#fff" stroke-width="1.5"/><rect x="4" y="9" width="12" height="6" rx="1.5" fill="#fff"/><rect x="21" y="10" width="1.5" height="4" rx=".75" fill="#fff"/></svg>
+    <span id="clock">Mon 21:42</span>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="anchor" id="anchor">
+    <div class="popover" id="pop">
+      <div class="header">
+        <div>
+          <h1>Lights</h1>
+          <div class="sub" id="summary">5 of 13 on</div>
+        </div>
+        <div class="alloff-wrap">
+          <button class="alloff" id="alloffBtn">All off
+            <svg viewBox="0 0 10 10"><path d="M1.5 3.5 5 7l3.5-3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="countdown" id="countdown">
+            <span id="cdText">Off in 5:00</span>
+            <button class="x" id="cdCancel" title="Cancel">✕</button>
+          </div>
+          <div class="menu" id="menu">
+            <div class="label">Turn all lights off…</div>
+            <button data-min="0">Now</button>
+            <hr>
+            <button data-min="5">In 5 minutes</button>
+            <button data-min="15">In 15 minutes</button>
+            <button data-min="30">In 30 minutes</button>
+            <button data-min="60">In 1 hour</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="scroll" id="rooms"></div>
+
+      <div class="footer">
+        <span><span class="dot"></span>Hue Bridge connected</span>
+        <svg viewBox="0 0 24 24" title="Settings"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.5 7.5 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.5 7.5 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L19.4 13ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
+      </div>
+
+      <!-- right-click menu -->
+      <div class="menu ctx" id="ctx" style="position:fixed">
+        <div class="label" id="ctxTitle">Desk</div>
+        <button id="ctxRename">Rename in Glow…</button>
+        <button id="ctxHide">Hide from Glow</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Glow · v1 mockup</h2>
+    <div class="tag">Interactive: try the popover on the right</div>
+    <ul>
+      <li><span class="ic">👆</span><span><b>Click a tile</b> to turn a lamp on or off.</span></li>
+      <li><span class="ic">↔︎</span><span><b>Drag sideways</b> on a tile to set the brightness. The colored fill follows your finger.</span></li>
+      <li><span class="ic">🎨</span><span>Each tile glows in the lamp's <b>real color</b>. Lamps that are off are quiet grey boxes.</span></li>
+      <li><span class="ic">⏱</span><span><b>All off ▾</b> turns everything off now or after 5, 15, 30 or 60 minutes. The countdown runs on the Hue bridge, so it still works if your Mac goes to sleep.</span></li>
+      <li><span class="ic">🖱</span><span><b>Right-click</b> a tile to rename or hide it in Glow only. Your Hue setup isn't touched.</span></li>
+      <li><span class="ic">🌫</span><span>An <b>unreachable</b> lamp (e.g. switched off at the wall) appears faded.</span></li>
+    </ul>
+    <div class="toggle">
+      <button id="darkBtn" class="active">Dark</button>
+      <button id="lightBtn">Light</button>
+    </div>
+    <div class="later">Later: lamp color picker (v2) · Nest card with current and target °C, at the top of the popover.</div>
+  </div>
+</div>
+
+<script>
+  const rooms = [
+    { name: "Living Room", lamps: [
+      { name: "Floor", on: true, bri: 70, c: ["#ffb35c", "#ffd9a0"] },
+      { name: "Ceiling", on: false, bri: 100, c: ["#ffe2b8", "#fff3e0"] },
+      { name: "Corner", on: true, bri: 40, c: ["#7a5cff", "#b9a6ff"] },
+      { name: "TV Strip", on: true, bri: 55, c: ["#2fb7ff", "#9fe0ff"] },
+    ]},
+    { name: "Office", lamps: [
+      { name: "Desk", on: true, bri: 85, c: ["#fff1d6", "#ffffff"] },
+      { name: "Shelf", on: false, bri: 60, c: ["#ff9f45", "#ffcf8a"] },
+      { name: "Monitor Bar", on: false, bri: 50, c: ["#e6f0ff", "#ffffff"] },
+    ]},
+    { name: "Bedroom", lamps: [
+      { name: "Bedside L", on: false, bri: 30, c: ["#ff8a3d", "#ffc38a"] },
+      { name: "Bedside R", on: false, bri: 30, c: ["#ff8a3d", "#ffc38a"] },
+      { name: "Ceiling", on: false, bri: 100, c: ["#ffe2b8", "#fff3e0"] },
+    ]},
+    { name: "Other", lamps: [
+      { name: "Hallway", on: true, bri: 25, c: ["#ffc46b", "#ffe3b0"] },
+      { name: "Kitchen", on: false, bri: 100, c: ["#fff1d6", "#ffffff"] },
+      { name: "Balcony", on: false, bri: 0, c: ["#999", "#bbb"], unreachable: true },
+    ]},
+  ];
+
+  const bulbSVG = '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2Zm-2.5 18h5a.5.5 0 0 1 .5.5v.5a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-.5a.5.5 0 0 1 .5-.5Z"/></svg>';
+  const roomsEl = document.getElementById("rooms");
+  let ctxLamp = null;
+
+  function render() {
+    roomsEl.innerHTML = "";
+    rooms.forEach(room => {
+      const visible = room.lamps.filter(l => !l.hidden);
+      if (!visible.length) return;
+      const r = document.createElement("div");
+      r.className = "room";
+      r.innerHTML = `<div class="room-title">${room.name}</div><div class="grid"></div>`;
+      const grid = r.querySelector(".grid");
+      visible.forEach(lamp => grid.appendChild(makeTile(lamp)));
+      roomsEl.appendChild(r);
+    });
+    updateSummary();
+  }
+
+  function paint(tile, lamp) {
+    tile.classList.toggle("on", lamp.on && !lamp.unreachable);
+    tile.querySelector(".fill").style.width = (lamp.on ? lamp.bri : 0) + "%";
+    tile.querySelector(".pct").textContent =
+      lamp.unreachable ? "Unreachable" : lamp.on ? lamp.bri + "%" : "Off";
+    updateSummary();
+  }
+
+  function makeTile(lamp) {
+    const t = document.createElement("div");
+    t.className = "tile" + (lamp.unreachable ? " unreachable" : "");
+    t.style.setProperty("--c1", lamp.c[0]);
+    t.style.setProperty("--c2", lamp.c[1]);
+    t.style.setProperty("--glow", lamp.c[0] + "aa");
+    t.innerHTML = `<div class="base"></div><div class="fill"></div>
+      <div class="content"><div class="bulb">${bulbSVG}</div>
+      <div><div class="name">${lamp.name}</div><div class="pct"></div></div></div>`;
+    paint(t, lamp);
+    lamp._tile = t;
+
+    if (lamp.unreachable) return t;
+
+    let startX = 0, dragging = false, down = false;
+    t.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      down = true; dragging = false; startX = e.clientX;
+      t.setPointerCapture(e.pointerId);
+    });
+    t.addEventListener("pointermove", e => {
+      if (!down) return;
+      if (!dragging && Math.abs(e.clientX - startX) > 5) { dragging = true; t.classList.add("dragging"); }
+      if (dragging) {
+        const rect = t.getBoundingClientRect();
+        const pct = Math.round(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) * 100);
+        lamp.bri = Math.max(1, pct);
+        lamp.on = pct > 0;
+        paint(t, lamp);
+      }
+    });
+    t.addEventListener("pointerup", () => {
+      if (!down) return;
+      down = false; t.classList.remove("dragging");
+      if (!dragging) { lamp.on = !lamp.on; if (lamp.on && lamp.bri < 5) lamp.bri = 60; paint(t, lamp); }
+    });
+    t.addEventListener("contextmenu", e => {
+      e.preventDefault();
+      ctxLamp = lamp;
+      ctx.querySelector("#ctxTitle").textContent = lamp.name;
+      ctx.style.left = e.clientX + "px"; ctx.style.top = e.clientY + "px";
+      ctx.classList.add("open");
+    });
+    return t;
+  }
+
+  function allLamps() { return rooms.flatMap(r => r.lamps).filter(l => !l.hidden); }
+  function updateSummary() {
+    const ls = allLamps();
+    const on = ls.filter(l => l.on && !l.unreachable).length;
+    document.getElementById("summary").textContent = on ? `${on} of ${ls.length} on` : `All ${ls.length} off`;
+    document.querySelector("#mbBulb path").setAttribute("fill", on ? "#fff" : "rgba(255,255,255,.45)");
+  }
+
+  // All off menu
+  const menu = document.getElementById("menu");
+  const btn = document.getElementById("alloffBtn");
+  const cd = document.getElementById("countdown");
+  const cdText = document.getElementById("cdText");
+  const ctx = document.getElementById("ctx");
+  let timer = null;
+
+  btn.addEventListener("click", e => { e.stopPropagation(); menu.classList.toggle("open"); });
+  document.addEventListener("click", () => { menu.classList.remove("open"); ctx.classList.remove("open"); });
+
+  function turnAllOff() {
+    allLamps().forEach(l => { l.on = false; if (l._tile) paint(l._tile, l); });
+  }
+  function cancelTimer() {
+    clearInterval(timer); timer = null;
+    cd.style.display = "none"; btn.style.display = "flex";
+  }
+
+  menu.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    const min = +b.dataset.min;
+    menu.classList.remove("open");
+    if (min === 0) { turnAllOff(); return; }
+    let left = min * 60;
+    btn.style.display = "none"; cd.style.display = "flex";
+    const tick = () => {
+      const m = Math.floor(left / 60), s = String(left % 60).padStart(2, "0");
+      cdText.textContent = m >= 60 ? `Off in 1:00:00` : `Off in ${m}:${s}`;
+    };
+    tick();
+    clearInterval(timer);
+    timer = setInterval(() => { left--; tick(); if (left <= 0) { cancelTimer(); turnAllOff(); } }, 1000);
+  }));
+  document.getElementById("cdCancel").addEventListener("click", cancelTimer);
+
+  // right-click actions
+  document.getElementById("ctxHide").addEventListener("click", () => { if (ctxLamp) { ctxLamp.hidden = true; render(); } });
+  document.getElementById("ctxRename").addEventListener("click", () => {
+    if (!ctxLamp) return;
+    const n = prompt("Name shown in Glow:", ctxLamp.name);
+    if (n) { ctxLamp.name = n; render(); }
+  });
+
+  // theme toggle
+  const pop = document.getElementById("pop");
+  document.getElementById("darkBtn").onclick = e => { pop.classList.remove("light"); e.target.classList.add("active"); lightBtn.classList.remove("active"); };
+  document.getElementById("lightBtn").onclick = e => { pop.classList.add("light"); e.target.classList.add("active"); darkBtn.classList.remove("active"); };
+
+  // clock
+  const d = new Date();
+  document.getElementById("clock").textContent =
+    d.toLocaleDateString("en-US", { weekday: "short" }) + " " +
+    d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+  // place popover so its arrow sits under the menu bar icon
+  function place() {
+    const icon = document.querySelector(".glow-item").getBoundingClientRect();
+    const cx = icon.left + icon.width / 2;
+    document.getElementById("anchor").style.left = (cx - (372 - 135)) + "px";
+  }
+  window.addEventListener("resize", place);
+  if (location.hash === "#open") menu.classList.add("open");
+  place();
+  render();
+</script>
+</body>
+</html>

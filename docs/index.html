@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glow: your Hue lamps in the Mac menu bar</title>
+<meta name="description" content="Glow puts your Philips Hue lamps one click away in the Mac menu bar. Click to toggle, drag to dim, colors, room switches, All off timer. Local only, no cloud. Free and open source.">
+<meta property="og:title" content="Glow: your Hue lamps in the Mac menu bar">
+<meta property="og:description" content="One click, no voice assistant, no phone, no cloud. Free and open source.">
+<meta property="og:image" content="https://merbil.github.io/glow/img/lights-dark.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="img/icon.png">
+<style>
+  :root {
+    --bg: #0d0d1a; --bg2: #15142b; --text: #f4f3fb; --muted: #a9a7c2; --amber: #ffb347; --card: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.09);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: radial-gradient(1200px 700px at 50% -10%, #2a2150 0%, var(--bg) 60%); color: var(--text);
+         line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; text-decoration: none; }
+  .brand img { width: 32px; height: 32px; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  nav a:hover { color: var(--text); }
+
+  .hero { text-align: center; padding: 56px 0 28px; }
+  .hero img.icon { width: 112px; height: 112px; filter: drop-shadow(0 18px 40px rgba(255,170,60,.35)); }
+  h1 { font-size: clamp(36px, 6vw, 60px); line-height: 1.08; letter-spacing: -0.02em; margin: 22px 0 14px; }
+  h1 span { background: linear-gradient(90deg, #ffe08a, var(--amber)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); font-size: 19px; max-width: 620px; margin: 0 auto 30px; }
+  .cta { display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 12px;
+         font-weight: 600; text-decoration: none; font-size: 16px; }
+  .btn.primary { background: linear-gradient(180deg, #ffcf6e, #ff9f2e); color: #241400; box-shadow: 0 10px 30px rgba(255,160,50,.3); }
+  .btn.ghost { border: 1px solid var(--line); background: var(--card); }
+  .fine { color: var(--muted); font-size: 13px; margin-top: 14px; }
+
+  .shots { display: flex; gap: 22px; justify-content: center; align-items: flex-start; margin: 46px 0 10px; flex-wrap: wrap; }
+  .shots img { width: 330px; max-width: 90vw; border-radius: 18px; box-shadow: 0 30px 80px rgba(0,0,0,.55); }
+  .shots img.second { margin-top: 48px; }
+
+  section { padding: 72px 0 0; }
+  h2 { font-size: 30px; letter-spacing: -0.01em; margin-bottom: 26px; text-align: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
+  .card h3 { font-size: 17px; margin-bottom: 6px; }
+  .card p { color: var(--muted); font-size: 15px; }
+  .feature { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; align-items: center; margin-bottom: 54px; }
+  .feature img { width: 100%; max-width: 420px; border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,.5); justify-self: center; }
+  .feature h3 { font-size: 24px; margin-bottom: 10px; }
+  .feature p { color: var(--muted); font-size: 16px; }
+  .feature.flip > :first-child { order: 2; }
+  @media (max-width: 760px) { .feature { grid-template-columns: 1fr; } .feature.flip > :first-child { order: 0; } }
+
+  ol.steps { counter-reset: s; list-style: none; max-width: 700px; margin: 0 auto; }
+  ol.steps li { counter-increment: s; position: relative; padding: 14px 0 14px 52px; border-bottom: 1px solid var(--line); color: var(--muted); }
+  ol.steps li b { color: var(--text); }
+  ol.steps li::before { content: counter(s); position: absolute; left: 0; top: 12px; width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(255,179,71,.15); color: var(--amber); font-weight: 700; }
+
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; margin: 10px auto; max-width: 760px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin-top: 10px; }
+
+  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 70px 0 40px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="#"><img src="img/icon.png" alt="">Glow</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/merbil/glow">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <img class="icon" src="img/icon.png" alt="Glow app icon">
+    <h1>Your Hue lamps,<br><span>one click away.</span></h1>
+    <p class="sub">Glow lives in your Mac's menu bar. Click to switch a lamp, drag to dim, right-click for colors. No voice assistant, no phone, no cloud.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/merbil/glow/releases/latest">⬇︎ Download for Mac</a>
+      <a class="btn ghost" href="https://github.com/merbil/glow">View on GitHub</a>
+    </div>
+    <p class="fine">Free &amp; open source · macOS 14 or later · Needs a Philips Hue Bridge</p>
+    <div class="shots">
+      <img src="img/lights-dark.png" alt="Glow showing lamps grouped by room, dark mode">
+      <img class="second" src="img/lights-light.png" alt="Glow in light mode">
+    </div>
+  </div>
+
+  <section id="features">
+    <h2>Everything you reach for, nothing you don't</h2>
+    <div class="feature">
+      <div>
+        <h3>Click. Drag. Done.</h3>
+        <p>Every lamp is a tile glowing in its real color, grouped by your Hue rooms. Click to toggle, drag sideways to set the brightness, flip a room's switch to do the whole room at once.</p>
+      </div>
+      <img src="img/lights-dark.png" alt="Lamp tiles and room switches">
+    </div>
+    <div class="feature flip">
+      <div>
+        <h3>Colors without the clutter</h3>
+        <p>Right-click a lamp for 16 colors and three whites. Glow only offers what that lamp can actually do. The menu stays open, so you can try a few.</p>
+      </div>
+      <img src="img/color-menu-dark.png" alt="Right-click color menu">
+    </div>
+    <div class="feature">
+      <div>
+        <h3>All off, now or later</h3>
+        <p>Heading out or going to bed? Turn everything off now, or in 5, 15, 30 or 60 minutes. The timer runs on your Hue Bridge, so it works even when your Mac is asleep.</p>
+      </div>
+      <img src="img/timer-light.png" alt="All off countdown">
+    </div>
+    <div class="feature flip">
+      <div>
+        <h3>Your lamps, your order</h3>
+        <p>Drag rooms and lamps into the order you think in, and hide the ones you never touch. It's all inside Glow, so your Hue setup stays exactly as it is.</p>
+      </div>
+      <img src="img/arrange-dark.png" alt="Arrange and hide">
+    </div>
+
+    <div class="grid">
+      <div class="card"><h3>🔒 Private by design</h3><p>Talks only to your Hue Bridge on your home network. No account, no cloud, no analytics.</p></div>
+      <div class="card"><h3>🛡 Verified bridge</h3><p>Checks your bridge is a genuine Philips Hue Bridge and pins its certificate. Your key never leaves your network.</p></div>
+      <div class="card"><h3>⚡️ Live</h3><p>Changes from the Hue app, wall switches or voice assistants show up instantly.</p></div>
+      <div class="card"><h3>🌗 Feels native</h3><p>Dark and light mode, keyboard control, VoiceOver, Reduce Motion. Runs natively on Apple Silicon and Intel.</p></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Set up in about 3 minutes</h2>
+    <ol class="steps">
+      <li><b>Download</b> the DMG, open it, and drag <b>Glow</b> onto <b>Applications</b>.</li>
+      <li><b>Open Glow.</b> macOS says it can't be opened, because Glow isn't from an Apple-registered developer. Click <b>Done</b>.</li>
+      <li>Go to <b>System Settings → Privacy &amp; Security</b>, click <b>Open Anyway</b> next to Glow, and confirm. You only do this once.</li>
+      <li>Click the <b>bulb in your menu bar</b> and <b>Allow</b> Glow to find devices on your local network.</li>
+      <li>When Glow asks, <b>press the round button on your Hue Bridge</b>. You have 3 minutes, so take your time.</li>
+    </ol>
+    <p class="fine" style="text-align:center">Use Home Assistant? You can paste its Hue key instead of pressing the button.</p>
+  </section>
+
+  <section id="faq">
+    <h2>Questions</h2>
+    <details><summary>Why does macOS say Glow "can't be opened"?</summary>
+      <p>Glow is a free side project, so it isn't signed through Apple's paid developer program. macOS asks you to confirm once via System Settings → Privacy &amp; Security → Open Anyway. The source code is public on GitHub, and you can build it yourself.</p></details>
+    <details><summary>Why does it ask about my local network?</summary>
+      <p>That's how Glow reaches your Hue Bridge. It only talks to the bridge (plus Philips' bridge-finder during setup), never to anything else.</p></details>
+    <details><summary>Do I have to press the button on the bridge?</summary>
+      <p>Once, during setup. That's how the bridge knows you're allowed to control it. If Home Assistant already controls your lights, you can paste its key instead.</p></details>
+    <details><summary>Does it work without a Hue Bridge?</summary>
+      <p>No. Glow needs a Philips Hue Bridge on the same network. Bluetooth-only Hue bulbs aren't supported.</p></details>
+    <details><summary>Is it safe?</summary>
+      <p>Glow stores the bridge key in a private file only you can read, verifies the bridge is genuine before talking to it, never follows redirects, and doesn't send data anywhere. It went through a security review and attack tests, and the code is open for anyone to check.</p></details>
+    <details><summary>What's next?</summary>
+      <p>A Nest thermostat card showing current and target temperature, and automatic updates. Follow the project on GitHub.</p></details>
+  </section>
+
+  <footer>
+    Made by <a href="https://github.com/merbil">Mert Erbil</a> · <a href="https://github.com/merbil/glow/blob/main/RELEASE_NOTES.md">Release notes</a> · <a href="https://github.com/merbil/glow/blob/main/LICENSE">MIT License</a><br><br>
+    Glow is an independent project, not affiliated with or endorsed by Signify or Philips Hue. "Philips Hue" is a trademark of Signify.
+  </footer>
+</div>
+</body>
+</html>
