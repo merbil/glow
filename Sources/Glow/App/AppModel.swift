@@ -881,13 +881,18 @@ final class AppModel {
 
         pairingTask = Task {
             let trust = BridgeTrust(host: host, pinnedFingerprint: nil)
-            let probe = HueClient(host: host, appKey: nil, trust: trust)
+            let probe = HueClient(host: host, appKey: nil, trust: trust, protocolClasses: self.testProtocolClasses)
             defer { probe.invalidate() }
             let config: BridgeConfig
             do {
                 config = try await probe.fetchConfig()
             } catch {
                 if !Task.isCancelled { onboarding = .failed(Self.pairingFailure(error, host: host)) }
+                return
+            }
+            // A key handed out by the real bridge must not travel through an impostor in between.
+            guard verifyGenuine(trust, config, host: host) else {
+                if !Task.isCancelled { onboarding = .failed(Self.notGenuineMessage) }
                 return
             }
             // Keep asking while the user walks to the bridge.
@@ -929,8 +934,9 @@ final class AppModel {
         onboarding = .checkingKey(host: host)
 
         pairingTask = Task {
+            // First contact WITHOUT the key: the bridge proves who it is before the key goes anywhere.
             let trust = BridgeTrust(host: host, pinnedFingerprint: nil)
-            let probe = HueClient(host: host, appKey: key, trust: trust, protocolClasses: self.testProtocolClasses)
+            let probe = HueClient(host: host, appKey: nil, trust: trust, protocolClasses: self.testProtocolClasses)
             defer { probe.invalidate() }
             let config: BridgeConfig
             do {
@@ -939,18 +945,15 @@ final class AppModel {
                 if !Task.isCancelled { onboarding = .failed(Self.pairingFailure(error, host: host)) }
                 return
             }
-            // Only send the key to a genuine Hue Bridge: its certificate must be signed by Philips'
-            // Hue root and issued to the bridge id it reports. Stops a fake "bridge" on the
-            // network from collecting a pasted key.
-            guard !requireGenuineBridge || trust.verifiedBridgeID == config.bridgeid.lowercased() else {
-                Log.model.error("existing key: \(host, privacy: .private) is not a verified Hue Bridge; key not sent")
-                if !Task.isCancelled {
-                    onboarding = .failed("This device didn't prove it's a genuine Philips Hue Bridge, so Glow didn't send your key to it. Pair with the bridge button instead.")
-                }
+            guard verifyGenuine(trust, config, host: host) else {
+                if !Task.isCancelled { onboarding = .failed(Self.notGenuineMessage) }
                 return
             }
+            // Only now is the key used, on a connection pinned to the verified certificate.
+            let keyed = HueClient(host: host, appKey: key, trust: trust, protocolClasses: self.testProtocolClasses)
+            defer { keyed.invalidate() }
             do {
-                _ = try await probe.fetchLights()       // 403 if the bridge doesn't know this key
+                _ = try await keyed.fetchLights()       // 403 if the bridge doesn't know this key
             } catch HueError.unauthorized {
                 if !Task.isCancelled { onboarding = .failed("This bridge doesn't accept that key. Check it, or pair with the button instead.") }
                 return
@@ -994,6 +997,24 @@ final class AppModel {
             NSWorkspace.shared.open(url)
         }
     }
+
+    /// The bridge must prove it's a genuine Philips Hue Bridge before Glow pairs with it or sends it a key:
+    /// its certificate is signed by Philips' Hue root and issued to the bridge id it reports.
+    /// On success the certificate is pinned for the rest of setup, so it can't be swapped mid-way.
+    /// (Every bridge that can run Glow, i.e. that has Hue API v2, has such a certificate.)
+    private func verifyGenuine(_ trust: BridgeTrust, _ config: BridgeConfig, host: String) -> Bool {
+        guard requireGenuineBridge else { return true }
+        guard let proven = trust.verifiedBridgeID, proven == config.bridgeid.lowercased(),
+              let seen = trust.observedFingerprint else {
+            Log.model.error("setup: \(host, privacy: .private) is not a verified Hue Bridge; stopped")
+            return false
+        }
+        trust.pinnedFingerprint = seen
+        return true
+    }
+
+    private static let notGenuineMessage =
+        "This device didn't prove it's a genuine Philips Hue Bridge, so Glow stopped before pairing or sending any key. Check the address, or make sure you're on your home network."
 
     /// Hosts to suggest in the key form: whatever discovery found.
     var suggestedHost: String { lastDiscovered.first?.host ?? "" }

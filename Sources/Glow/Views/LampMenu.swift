@@ -19,7 +19,12 @@ enum LampMenu {
         if lamp.capability != .single {
             // Picking a color keeps the menu open (try a few, then click outside to close).
             let section = ColorMenuSection(lamp: lamp, model: model, onColor: onColor, onWhite: onWhite)
-            let host = NSHostingView(rootView: section)
+            // A SwiftUI view inside an NSMenu doesn't reliably pick up the menu's dark appearance,
+            // which left the white chips' labels dark-on-dark. Pass the current appearance in.
+            let appearance = NSApp.effectiveAppearance
+            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let host = NSHostingView(rootView: AnyView(section.environment(\.colorScheme, dark ? .dark : .light)))
+            host.appearance = appearance
             host.frame = NSRect(origin: .zero, size: host.fittingSize)
             let item = NSMenuItem()
             item.view = host

@@ -1,5 +1,16 @@
 # Glow release notes
 
+## 0.3.1 (build 9): 2026-10-19
+
+### Security
+Thanks to a friend's review:
+- **A pasted Hue key is no longer sent on the first request.** Before, the very first contact with the bridge already carried the key, before Glow had checked that the bridge is genuine. The first contact now never carries a key, and the key is used only after the bridge has proven itself.
+- **Pairing with the bridge button now requires a genuine Philips Hue Bridge.** Before, button pairing went ahead even when the bridge couldn't prove it was genuine, so someone intercepting setup could have received the new key. Both pairing paths now verify first (the certificate is signed by Philips' Hue root and issued to that bridge), then pin the certificate for the rest of setup. Every bridge that can run Glow (Hue API v2) has such a certificate.
+- New regression tests check what the first request carries, and that button pairing stops at an unverified bridge.
+
+### Fixed
+- In dark mode, the **Warm / Daylight / Bright white** labels in the right-click menu were dark text on a dark background. They now follow the menu's appearance.
+
 ## 0.3.0 (build 8): 2026-10-19
 
 First public release.

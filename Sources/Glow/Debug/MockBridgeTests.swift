@@ -398,8 +398,20 @@ enum MockBridgeTests {
         model.useExistingKey(host: "10.0.0.2", key: "KEY")
         try? await Task.sleep(for: .milliseconds(300))
         expect(MockBridge.calls("GET", "/clip/v2/resource/light").isEmpty, "key is NOT sent to a bridge that isn't proven genuine")
+        // Friend's finding: the very first request must not carry the key either.
+        let firstContact = MockBridge.calls("GET", "/api/0/config")
+        expect(!firstContact.isEmpty && firstContact.allSatisfy { $0.key == nil }, "first contact carries no key")
+        expect(MockBridge.calls.allSatisfy { $0.key != "KEY" }, "the pasted key went nowhere at all")
         if case .failed(let m) = model.onboarding { expect(m.contains("genuine"), "explains why: \(m)") }
         else { expect(false, "unverified bridge → failed state") }
+
+        // Button pairing stops at an unverified bridge too (no key requested from it).
+        MockBridge.on("POST /api", 200, #"[{"success":{"username":"LEAKED"}}]"#)
+        model.pair(with: "10.0.0.2")
+        try? await Task.sleep(for: .milliseconds(300))
+        expect(MockBridge.calls("POST", "/api").isEmpty, "button pairing doesn't ask an unverified bridge for a key")
+        if case .failed(let m) = model.onboarding { expect(m.contains("genuine"), "button pairing explains why") }
+        else { expect(false, "unverified bridge → button pairing fails: \(model.onboarding)") }
         model.requireGenuineBridge = false
         MockBridge.on("GET /clip/v2/resource/light", 403, "{}")     // back to "this key is wrong"
         model.discover = { [] }
@@ -423,6 +435,7 @@ enum MockBridgeTests {
         expect(prefs.bridgeHost == "10.0.0.2" && prefs.bridgeID == "001788FFFE000000", "bridge remembered")
         expect(model.lamps.count == 3, "lamps load with the existing key")
         expect(MockBridge.calls("POST", "/api").isEmpty, "no button pairing request was made")
+        expect(MockBridge.calls("GET", "/api/0/config").allSatisfy { $0.key == nil }, "config is always fetched without the key")
         model.forgetBridge()
         KeyStore.selfTest.delete("appKey")
         await settle()
