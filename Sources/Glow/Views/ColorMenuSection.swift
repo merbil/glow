@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The color part of a lamp's right-click menu, in the style of Finder's tag dots.
@@ -9,6 +10,11 @@ struct ColorMenuSection: View {
     var model: AppModel? = nil
     let onColor: (ColorPalette.Swatch) -> Void
     let onWhite: (ColorPalette.White) -> Void
+    /// Inside a native menu SwiftUI's default colours don't follow dark mode (labels came out
+    /// dark-on-dark), so every colour here is chosen explicitly from the menu's appearance.
+    var isDark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+
+    private var ink: Color { isDark ? Color(white: 0.93) : Color(white: 0.12) }
 
     @State private var hovered: String?
     private let dot: CGFloat = 18
@@ -66,8 +72,9 @@ struct ColorMenuSection: View {
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
-                .background(Capsule().fill(Color.primary.opacity(isActive ? 0.16 : 0.06)))
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(white.id == selected?.id ? 0.4 : 0)))
+                .foregroundStyle(ink)
+                .background(Capsule().fill(ink.opacity(isActive ? 0.16 : 0.07)))
+                .overlay(Capsule().strokeBorder(ink.opacity(white.id == selected?.id ? 0.45 : 0)))
                 .onHover { hovered = $0 ? white.id : nil }
                 .onTapGesture { onWhite(white) }
             }
@@ -76,7 +83,7 @@ struct ColorMenuSection: View {
 
     private func ring(isOn: Bool) -> some View {
         Circle()
-            .strokeBorder(Color.primary.opacity(isOn ? 0.85 : 0), lineWidth: 1.5)
+            .strokeBorder(ink.opacity(isOn ? 0.85 : 0), lineWidth: 1.5)
             .padding(-3.5)
     }
 }

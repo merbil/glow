@@ -1,5 +1,14 @@
 # Glow release notes
 
+## 0.3.2 (build 10): 2026-10-19
+
+### Fixed
+- **Warm / Daylight / Bright white labels in dark mode, properly this time.**
+  - The 0.3.1 fix didn't take effect: inside a native menu, SwiftUI's default text colour stays dark even when it's told the menu is dark.
+  - The menu's colours are now set explicitly from the light or dark appearance.
+  - Measured on the rendered menu: label text 0.94 against a 0.23 chip in dark mode (before: 0.23 against 0.23, i.e. invisible).
+- README and website screenshots updated.
+
 ## 0.3.1 (build 9): 2026-10-19
 
 ### Security
