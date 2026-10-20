@@ -86,6 +86,8 @@ private struct GeneralTab: View {
         case .upToDate: return "You're up to date"
         case .failed: return "Couldn't check"
         case .available(let release): return release.version
+        case .downloading, .verifying, .installing, .installFailed, .needsManualDownload:
+            return updater.available?.version ?? "Couldn't check"
         }
     }
 
@@ -110,15 +112,27 @@ private struct GeneralTab: View {
                 LabeledContent("Installed version", value: updater.currentVersion)
                 LabeledContent("Latest version", value: latestText)
                 HStack {
-                    if updater.available != nil {
-                        Text("Open the downloaded file and drag Glow to Applications, replacing the old one.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if let progress = updater.state.progressText {
+                        ProgressView().controlSize(.small)
+                        Text(progress).font(.caption).foregroundStyle(.secondary)
+                    } else if updater.available != nil, !updater.offersInstall {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let notice = updater.notice { Text(notice) }
+                            Text("Open the downloaded file and drag Glow to Applications, replacing the old one.")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                     Spacer()
                     if let release = updater.available {
-                        Button("Download Glow \(release.version)") { updater.download() }
-                            .buttonStyle(.borderedProminent)
+                        if updater.offersInstall {
+                            Button("Update to Glow \(release.version)") { Task { await updater.install() } }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(updater.isWorking)
+                        } else {
+                            Button("Download Glow \(release.version)") { updater.download() }
+                                .buttonStyle(.borderedProminent)
+                        }
                     } else {
                         Button("Check Now") { Task { await updater.check() } }
                             .disabled(!updater.isRunning || updater.state == .checking)

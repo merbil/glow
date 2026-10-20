@@ -24,6 +24,8 @@ struct AboutTab: View {
                             Text("Your Hue lamps, one click away.")
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(.secondary)
+                            Link("Buy me a coffee", destination: URL(string: "https://buymeacoffee.com/merbil")!)
+                                .font(.system(size: 11.5))
                         }
                     }
 

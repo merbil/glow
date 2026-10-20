@@ -211,10 +211,13 @@ private extension View {
 private struct Pulse: ViewModifier {
     @State private var on = false
     func body(content: Content) -> some View {
+        // The endless animation is scoped to scale and opacity only. Applied to the whole view, it also
+        // picked up the circle's position while the window was still settling, and the ring kept
+        // sliding between the corner and the middle.
         content
-            .scaleEffect(on ? 1.15 : 0.9)
-            .opacity(on ? 1 : 0.5)
-            .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: on)
+            .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+                $0.scaleEffect(on ? 1.15 : 0.9).opacity(on ? 1 : 0.5)
+            }
             .onAppear { on = true }
     }
 }

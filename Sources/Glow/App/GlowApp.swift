@@ -6,6 +6,7 @@ enum Launcher {
     /// `--snapshot <file.png> [--light] [--timer]` renders the popover with demo data and exits.
     /// `--menu-shot <file.png> <lamp>` captures the real right-click menu.
     /// `--selftest` (debug builds) runs the built-in tests.
+    /// `--install-update <dmg> <version>` and `--print-version <file>` (debug builds) are for the update test.
     /// `--demo` runs the real menu bar app with sample lamps (no bridge needed).
     static func main() {
         let args = CommandLine.arguments
@@ -42,6 +43,21 @@ enum Launcher {
             exit(2)
         }
         #else
+        if let i = args.firstIndex(of: "--print-version"), i + 1 < args.count {
+            // Used by the update test: the relauncher runs the new app this way, with no UI.
+            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+            exit((try? version.write(toFile: args[i + 1], atomically: true, encoding: .utf8)) == nil ? 1 : 0)
+        }
+        if let i = args.firstIndex(of: "--install-update"), i + 2 < args.count {
+            // Update pipeline against this bundle with a local DMG (scripts/test-self-update.sh). No model, no UI.
+            MainActor.assumeIsolated {
+                NSApplication.shared.setActivationPolicy(.prohibited)
+                let (dmg, version) = (URL(fileURLWithPath: args[i + 1]), args[i + 2])
+                Task { @MainActor in exit(await UpdateInstaller.testInstall(dmg: dmg, version: version)) }
+                NSApplication.shared.run()
+            }
+            return
+        }
         if let i = args.firstIndex(of: "--try-key"), i + 2 < args.count {
             // Runs the real "use an existing key" flow against a real bridge, with throwaway
             // settings and the test Keychain, so the installed app is never affected.

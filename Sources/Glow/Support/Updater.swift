@@ -2,8 +2,9 @@ import AppKit
 import Observation
 
 /// Tells you when a newer Glow is out. It asks GitHub for the latest release (one request, no
-/// personal data), at most once a day. Installing stays manual: Download opens the new DMG in the
-/// browser, so macOS checks it like any other download.
+/// personal data), at most once a day. The user starts the update: `install()` downloads the DMG,
+/// checks that the app inside is signed by the same certificate as this one (see `UpdateInstaller`),
+/// swaps it in and relaunches. Where that can't work, Download opens the DMG in the browser.
 @MainActor
 @Observable
 final class Updater {
@@ -17,7 +18,33 @@ final class Updater {
     enum State: Equatable {
         case idle, checking, upToDate, failed
         case available(Release)
+        case downloading, verifying, installing
+        /// The in-place update went wrong; the browser download is offered instead.
+        case installFailed
+        /// Glow can't replace itself where it is now (checked before downloading anything).
+        case needsManualDownload
+
+        var progressText: String? {
+            switch self {
+            case .downloading: "Downloading…"
+            case .verifying: "Checking the update…"
+            case .installing: "Installing…"
+            default: nil
+            }
+        }
+
+        /// Shown above the Download button when the one-click update isn't happening.
+        var notice: String? {
+            switch self {
+            case .installFailed: Updater.failureText
+            case .needsManualDownload: Updater.fallbackText
+            default: nil
+            }
+        }
     }
+
+    nonisolated static let failureText = "Couldn't update automatically, but you can download it instead."
+    nonisolated static let fallbackText = "Glow can't replace itself where it is now. Move Glow to the Applications folder in your home folder for one-click updates, or download it instead."
 
     private(set) var state = State.idle
     private(set) var isRunning = false
@@ -33,6 +60,23 @@ final class Updater {
     }
 
     var available: Release? { latest }
+
+    /// Downloading, checking or installing an update: nothing else may start.
+    var isWorking: Bool { state.progressText != nil }
+
+    /// The Update button (not the plain Download one) is offered: Glow can replace itself here
+    /// and the last try didn't fail. While it works, the button stays and is disabled.
+    var offersInstall: Bool {
+        guard available != nil else { return false }
+        if isWorking { return true }
+        return state != .installFailed && state != .needsManualDownload && UpdateInstaller.canInstall(at: Bundle.main.bundleURL)
+    }
+
+    /// Why the Download button is shown instead of Update, if it is.
+    var notice: String? {
+        if let text = state.notice { return text }
+        return available != nil && !offersInstall ? Self.fallbackText : nil
+    }
 
     var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -61,6 +105,9 @@ final class Updater {
     func start() {
         guard !isRunning, Bundle.main.bundleURL.pathExtension == "app" else { return }
         isRunning = true
+        // Whatever the last update left next to the app (the old copy) goes now that it has quit.
+        let folder = Bundle.main.bundleURL.deletingLastPathComponent()
+        Task.detached(priority: .utility) { UpdateInstaller.removeLeftovers(in: folder) }
         timer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { _ in
             Task { @MainActor in Updater.shared.checkIfDue() }
         }
@@ -82,7 +129,7 @@ final class Updater {
     }
 
     func check() async {
-        guard isRunning, state != .checking else { return }
+        guard isRunning, !isWorking, state != .checking else { return }
         state = .checking
         var request = URLRequest(url: Self.latestReleaseURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -131,6 +178,36 @@ final class Updater {
     func download() {
         guard let release = available else { return }
         NSWorkspace.shared.open(release.downloadURL)
+    }
+
+    /// One-click update, started by the user. Every step before the swap leaves the installed app alone.
+    func install() async {
+        guard let release = available, !isWorking, state != .checking else { return }
+        let bundleURL = Bundle.main.bundleURL
+        guard UpdateInstaller.canInstall(at: bundleURL) else { state = .needsManualDownload; return }
+        let (current, bundleID) = (currentVersion, Bundle.main.bundleIdentifier)
+        var workFolder: URL?
+        defer { if let workFolder { try? FileManager.default.removeItem(at: workFolder) } }
+        do {
+            let work = try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                                                   appropriateFor: bundleURL, create: true)
+            workFolder = work
+            state = .downloading
+            let dmg = work.appendingPathComponent("Glow.dmg")
+            try await UpdateInstaller.download(release, currentVersion: current, to: dmg)
+            state = .verifying
+            let staged = try await Task.detached {
+                try UpdateInstaller.stageAndVerify(dmg: dmg, workFolder: work, bundleURL: bundleURL,
+                                                   bundleID: bundleID, version: release.version, currentVersion: current)
+            }.value
+            state = .installing
+            try await Task.detached { try UpdateInstaller.replace(bundleURL: bundleURL, with: staged) }.value
+            try UpdateInstaller.relaunch(app: bundleURL)
+            NSApp.terminate(nil)
+        } catch {
+            Log.model.error("update install failed: \(Log.code(error), privacy: .public) \(error.localizedDescription, privacy: .private)")
+            state = .installFailed
+        }
     }
 
     // MARK: Parsing (pure, tested in the self-test)

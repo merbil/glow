@@ -1,5 +1,13 @@
 # Glow release notes
 
+## 0.3.5 (build 13): 2026-10-21
+
+### Added
+- One-click updates. From this version on, Update in Settings downloads the new version, checks that it's signed with the same certificate as Glow, and replaces it. If Glow can't replace itself where it is (for example on a managed work Mac), it offers the download instead.
+
+### Fixed
+- On the pairing screen, the ring around the bridge button no longer slides around.
+
 ## 0.3.4 (build 12): 2026-10-20
 
 ### Added

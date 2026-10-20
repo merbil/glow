@@ -451,6 +451,69 @@ enum SelfTest {
         UserDefaults().removePersistentDomain(forName: suite)
         check(Updater.latestReleaseURL.path == "/repositories/\(Updater.repositoryID)/releases/latest",
               "update: asks for the release by repository ID")
+
+        // One-click update: redirect hosts, size cap, where Glow can't replace itself, leftovers, states.
+        func hostOK(_ url: String) -> Bool { URL(string: url).map(UpdateInstaller.isAllowedHost) ?? false }
+        check(hostOK("https://github.com/merbil/glow/releases/download/v1/Glow.dmg")
+              && hostOK("https://objects.githubusercontent.com/x") && hostOK("https://release-assets.githubusercontent.com/x"),
+              "install: GitHub's download hosts are allowed")
+        for evil in ["http://github.com/x", "https://evil.example/x", "https://github.com.evil.example/x", "https://githubusercontent.com/x",
+                     "https://user@github.com/x", "https://github.com:8443/x", "https://raw.githubusercontent.com/x", "file:///tmp/x"] {
+            check(!hostOK(evil), "install: refuses redirect to \(evil)")
+        }
+        let cap = UpdateInstaller.maxDownloadBytes
+        check(cap == 60 * 1024 * 1024 && !UpdateInstaller.exceedsCap(expected: cap, received: cap)
+              && UpdateInstaller.exceedsCap(expected: cap + 1, received: 0) && UpdateInstaller.exceedsCap(expected: -1, received: cap + 1)
+              && !UpdateInstaller.exceedsCap(expected: -1, received: 0), "install: size cap on announced and streamed size")
+        check(!UpdateInstaller.pathBlocksInstall("/Applications/Glow.app") && !UpdateInstaller.pathBlocksInstall("/Users/me/Applications/Glow.app"),
+              "install: a normal app location is fine")
+        check(UpdateInstaller.pathBlocksInstall("/private/var/folders/x/AppTranslocation/ABC/d/Glow.app")
+              && UpdateInstaller.pathBlocksInstall("/Volumes/Glow/Glow.app") && UpdateInstaller.pathBlocksInstall("/tmp/.build/debug/Glow"),
+              "install: translocated, DMG and non-app locations fall back")
+        check(!UpdateInstaller.canInstall(at: Bundle.main.bundleURL), "install: this test binary is not an installable app")
+        check(UpdateInstaller.isLeftover(name: ".Glow-update-ABC", isDirectory: true, isSymlink: false)
+              && !UpdateInstaller.isLeftover(name: ".Glow-update-ABC", isDirectory: false, isSymlink: false)
+              && !UpdateInstaller.isLeftover(name: ".Glow-update-ABC", isDirectory: true, isSymlink: true)
+              && !UpdateInstaller.isLeftover(name: ".Glow-update-", isDirectory: true, isSymlink: false)
+              && !UpdateInstaller.isLeftover(name: "Glow-update-ABC", isDirectory: true, isSymlink: false)
+              && !UpdateInstaller.isLeftover(name: "Glow.app", isDirectory: true, isSymlink: false), "install: leftover cleanup is prefix-only")
+        let sandbox = FileManager.default.temporaryDirectory.appendingPathComponent("glow-leftover-\(UUID().uuidString)")
+        let fileManager = FileManager.default
+        try? fileManager.createDirectory(at: sandbox.appendingPathComponent(".Glow-update-A/inner/.Glow-update-B"), withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: sandbox.appendingPathComponent("Other/.Glow-update-C"), withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: sandbox.appendingPathComponent("keep"), withIntermediateDirectories: true)
+        fileManager.createFile(atPath: sandbox.appendingPathComponent(".Glow-update-file").path, contents: Data())
+        try? fileManager.createSymbolicLink(at: sandbox.appendingPathComponent(".Glow-update-link"), withDestinationURL: sandbox.appendingPathComponent("keep"))
+        UpdateInstaller.removeLeftovers(in: sandbox)
+        check(!fileManager.fileExists(atPath: sandbox.appendingPathComponent(".Glow-update-A").path)
+              && fileManager.fileExists(atPath: sandbox.appendingPathComponent("Other/.Glow-update-C").path)
+              && fileManager.fileExists(atPath: sandbox.appendingPathComponent(".Glow-update-file").path)
+              && fileManager.fileExists(atPath: sandbox.appendingPathComponent("keep").path)
+              && (try? fileManager.destinationOfSymbolicLink(atPath: sandbox.appendingPathComponent(".Glow-update-link").path)) != nil,
+              "install: cleanup removes only top-level staging folders")
+        try? fileManager.removeItem(at: sandbox)
+
+        // This debug binary against its own requirement: itself passes, other code and a wrong identity don't.
+        let binary = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        if let requirement = try? UpdateInstaller.runningRequirement() {
+            check((try? UpdateInstaller.checkSignature(of: binary, requirement: requirement)) != nil, "install: the running build meets its own requirement")
+            check((try? UpdateInstaller.checkSignature(of: URL(fileURLWithPath: "/bin/ls"), requirement: requirement)) == nil,
+                  "install: other code doesn't meet it")
+            check((try? UpdateInstaller.verify(app: binary, requirement: requirement, bundleID: "x", version: "9.9.9", currentVersion: "0.1")) == nil,
+                  "install: a non-bundle is refused")
+        } else {
+            check(false, "install: the running build has a designated requirement")
+        }
+
+        let notRunning: [Updater.State] = [.idle, .checking, .upToDate, .failed]
+        check(Updater.State.downloading.progressText == "Downloading…" && Updater.State.verifying.progressText == "Checking the update…"
+              && Updater.State.installing.progressText == "Installing…"
+              && notRunning.allSatisfy { $0.progressText == nil && $0.notice == nil }
+              && Updater.State.available(Updater.Release(version: "1", downloadURL: Updater.latestReleaseURL)).progressText == nil,
+              "install: states map to progress texts")
+        check(Updater.State.installFailed.notice == "Couldn't update automatically, but you can download it instead."
+              && Updater.State.needsManualDownload.notice?.hasPrefix("Glow can't replace itself where it is now.") == true
+              && Updater.State.installFailed.progressText == nil, "install: failure and fallback texts")
     }
 
     // MARK: Bridge trust

@@ -53,7 +53,15 @@ struct FooterView: View {
             Button("Settings…") { model.openSettings(.general) }
                 .keyboardShortcut(",")
             if let release = Updater.shared.available {
-                Button("Download Glow \(release.version)…") { Updater.shared.download() }
+                if Updater.shared.offersInstall {
+                    Button("Update to Glow \(release.version)…") {
+                        model.openSettings(.general)
+                        Task { await Updater.shared.install() }
+                    }
+                    .disabled(Updater.shared.isWorking)
+                } else {
+                    Button("Download Glow \(release.version)…") { Updater.shared.download() }
+                }
             }
             if model.hiddenCount > 0 {
                 Button("Show Hidden (\(model.hiddenCount))") { model.unhideAll() }
