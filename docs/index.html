@@ -69,6 +69,10 @@
   summary { cursor: pointer; font-weight: 600; }
   details p { color: var(--muted); margin-top: 10px; }
 
+  /* Buy Me a Coffee button, as a plain link (no third-party script or font). */
+  .bmc { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 10px;
+         background: #FFDD00; color: #000; border: 1px solid #000; font-weight: 600; font-size: 16px; text-decoration: none; }
+  .bmc:hover { filter: brightness(0.95); }
   footer { color: var(--muted); font-size: 13px; text-align: center; padding: 70px 0 40px; }
   footer a { color: var(--muted); }
 </style>
@@ -167,6 +171,7 @@
   </section>
 
   <footer>
+    <p style="margin-bottom:22px"><a class="bmc" href="https://buymeacoffee.com/merbil">☕ Buy me a coffee</a></p>
     Made by <a href="https://github.com/merbil">Mert Erbil</a> · <a href="https://github.com/merbil/glow/blob/main/RELEASE_NOTES.md">Release notes</a> · <a href="https://github.com/merbil/glow/blob/main/LICENSE">MIT License</a><br><br>
     Glow is an independent project, not affiliated with or endorsed by Signify or Philips Hue. "Philips Hue" is a trademark of Signify.
   </footer>
