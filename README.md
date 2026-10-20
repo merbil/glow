@@ -2,7 +2,7 @@
 
 <h1 align="center">Glow</h1>
 <p align="center"><b>Your Philips Hue lamps, one click away, right in the Mac menu bar.</b><br>
-No voice assistant, no phone, no cloud.</p>
+You don't need Siri, Alexa or your phone.</p>
 
 <p align="center">
   <a href="https://github.com/merbil/glow/releases/latest"><b>Download for Mac</b></a> ·
@@ -18,14 +18,14 @@ No voice assistant, no phone, no cloud.</p>
 
 ## What it does
 
-- **See every lamp, grouped by your Hue rooms,** as tiles that glow in each lamp's real color.
-- **Click** a tile to switch a lamp on or off. **Drag sideways** to dim it.
-- **Right-click** for colors and whites. Glow only offers what that lamp supports.
+- **See every lamp** grouped by your Hue rooms, as tiles that glow in each lamp's real color.
+- **Click** a tile to switch a lamp on or off, or **drag sideways** to dim it.
+- **Right-click** for colors and whites (Glow only offers what that lamp supports).
 - **Room switches** turn a whole room on or off.
-- **All off:** now, or in 5, 15, 30 or 60 minutes. The timer runs on the bridge, so it works while your Mac sleeps.
-- **Arrange & Hide:** drag rooms and lamps into your order and hide what you don't use. This only changes Glow; your Hue setup isn't touched.
-- Live updates from the Hue app, wall switches and voice assistants.
-- Dark and light mode, plus keyboard and VoiceOver support.
+- **All off** turns everything off now, or in 5, 15, 30 or 60 minutes. The timer runs on the bridge, so it still works while your Mac sleeps.
+- **Lamps & Rooms** in Settings lets you drag rooms and lamps into your desired order and hide the ones you never interact with. It only changes Glow, so your Hue setup isn't touched.
+- Changes from the Hue app, wall switches and voice assistants **show up live**.
+- Works in **dark and light mode**, with keyboard and VoiceOver support.
 
 <p align="center">
   <img src="design/screenshots/color-menu-dark.png" width="420" alt="Right-click color menu">
@@ -49,7 +49,7 @@ Already use Home Assistant? On the pairing screen you can paste its Hue key inst
 ## Privacy & security
 
 - Glow talks **only to your Hue Bridge, on your home network**: no account, no cloud, no analytics.
-  - The only internet request is to Philips' bridge-finder (`discovery.meethue.com`) during setup.
+  - Glow only goes online for two things. It asks Philips' bridge-finder (`discovery.meethue.com`) for your bridge during setup. Also, it asks GitHub once a day for the latest version number.
 - The bridge key is stored in a private file that only your user account can read (`~/Library/Application Support/Glow`).
 - Glow checks that the bridge is a **genuine Philips Hue Bridge**:
   - its certificate must be signed by Philips' Hue root and issued to that bridge
@@ -74,7 +74,6 @@ scripts/make-dmg.sh                             # build the installer DMG
 ## Roadmap
 
 - A Nest thermostat card (current and target temperature)
-- Automatic updates
 
 ---
 

@@ -130,7 +130,7 @@ private struct RoomHeader: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button("Hide \(section.title) from Glow") { withAnimation { model.setRoomHidden(section.id, true) } }
-            Button("Arrange & Hide…") { model.page = .arrange }
+            Button("Lamps & Rooms…") { model.openSettings(.arrange) }
         }
     }
 }

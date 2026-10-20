@@ -48,7 +48,9 @@ struct LampTile: View {
         .frame(height: Metrics.tileHeight)
         .clipShape(shape)
         .overlay(shape.strokeBorder(borderColor, lineWidth: 1))
-        .overlay(shape.strokeBorder(Color.accentColor, lineWidth: 2.5).padding(-1).opacity(isFocused ? 1 : 0))
+        // Clicking also focuses the tile, so the ring shows only while using the keyboard.
+        .overlay(shape.strokeBorder(Color.accentColor, lineWidth: 2.5).padding(-1)
+            .opacity(isFocused && InputMode.shared.usingKeyboard ? 1 : 0))
         .shadow(color: isLit ? tint.color.opacity(0.55) : .clear, radius: 11, y: 6)
         .scaleEffect(isPressed && !isDragging && !reduceMotion ? 0.97 : 1)
         .opacity(lamp.isReachable ? 1 : 0.45)

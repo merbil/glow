@@ -42,6 +42,7 @@
   .shots { display: flex; gap: 22px; justify-content: center; align-items: flex-start; margin: 46px 0 10px; flex-wrap: wrap; }
   .shots img { width: 330px; max-width: 90vw; border-radius: 18px; box-shadow: 0 30px 80px rgba(0,0,0,.55); }
   .shots img.second { margin-top: 48px; }
+  .shots img.hero { width: 960px; border-radius: 14px; }
 
   section { padding: 72px 0 0; }
   h2 { font-size: 30px; letter-spacing: -0.01em; margin-bottom: 26px; text-align: center; }
@@ -94,8 +95,7 @@
     </div>
     <p class="fine">Free &amp; open source · macOS 14 or later · Needs a Philips Hue Bridge</p>
     <div class="shots">
-      <img src="img/lights-dark.png" alt="Glow showing lamps grouped by room, dark mode">
-      <img class="second" src="img/lights-light.png" alt="Glow in light mode">
+      <img class="hero" src="img/hero.png" alt="Glow open from the Mac menu bar, showing lamps grouped by room">
     </div>
   </div>
 
@@ -106,7 +106,7 @@
         <h3>Click. Drag. Done.</h3>
         <p>Every lamp is a tile glowing in its real color, grouped by your Hue rooms. Click to toggle, drag sideways to set the brightness, flip a room's switch to do the whole room at once.</p>
       </div>
-      <img src="img/lights-dark.png" alt="Lamp tiles and room switches">
+      <img src="img/tutorial.gif" alt="Clicking a lamp on, dragging to dim, picking a color and setting All off for 5 minutes">
     </div>
     <div class="feature flip">
       <div>
@@ -125,9 +125,9 @@
     <div class="feature flip">
       <div>
         <h3>Your lamps, your order</h3>
-        <p>Drag rooms and lamps into the order you think in, and hide the ones you never touch. It's all inside Glow, so your Hue setup stays exactly as it is.</p>
+        <p>Open Settings and go to Lamps &amp; Rooms, then drag rooms and lamps into the order you think in and hide the ones you never touch. It only changes Glow, so your Hue setup stays exactly as it is.</p>
       </div>
-      <img src="img/arrange-dark.png" alt="Arrange and hide">
+      <img src="img/arrange-dark.png" alt="Lamps &amp; Rooms in Settings">
     </div>
 
     <div class="grid">
@@ -155,7 +155,7 @@
     <details><summary>Why does macOS say Glow "can't be opened"?</summary>
       <p>Glow is a free side project, so it isn't signed through Apple's paid developer program. macOS asks you to confirm once via System Settings → Privacy &amp; Security → Open Anyway. The source code is public on GitHub, and you can build it yourself.</p></details>
     <details><summary>Why does it ask about my local network?</summary>
-      <p>That's how Glow reaches your Hue Bridge. It only talks to the bridge (plus Philips' bridge-finder during setup), never to anything else.</p></details>
+      <p>That's how Glow reaches your Hue Bridge. Other than that, it only talks to Philips' bridge-finder during setup and to GitHub once a day to look for a new version.</p></details>
     <details><summary>Do I have to press the button on the bridge?</summary>
       <p>Once, during setup. That's how the bridge knows you're allowed to control it. If Home Assistant already controls your lights, you can paste its key instead.</p></details>
     <details><summary>Does it work without a Hue Bridge?</summary>
@@ -163,7 +163,7 @@
     <details><summary>Is it safe?</summary>
       <p>Glow stores the bridge key in a private file only you can read, verifies the bridge is genuine before talking to it, never follows redirects, and doesn't send data anywhere. It went through a security review and attack tests, and the code is open for anyone to check.</p></details>
     <details><summary>What's next?</summary>
-      <p>A Nest thermostat card showing current and target temperature, and automatic updates. Follow the project on GitHub.</p></details>
+      <p>A Nest thermostat card showing current and target temperature. Follow the project on GitHub.</p></details>
   </section>
 
   <footer>

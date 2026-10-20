@@ -1,5 +1,20 @@
 # Glow release notes
 
+## 0.3.3 (build 11): 2026-10-20
+
+### Added
+- Glow now checks GitHub once a day for a new version. Settings shows your version next to the latest one, with a button to download it.
+
+### Changed
+- Arrange & Hide moved to Settings, as a new **Lamps & Rooms** tab. It has the same drag handles and eye buttons as before.
+- The Settings window has proper icon tabs at the top now, like the system's own settings windows.
+
+### Fixed
+- The menu bar window now always fits its content. Before, it could keep an empty frame around the lamps after hiding or reordering rooms.
+- After you allow Glow in the Local Network settings, it now reconnects as soon as you open its menu, without quitting.
+- The right-click menu of a single-color lamp now says the lamp has one fixed color. Before, it only showed Rename and Hide, which looked broken.
+- The blue focus ring around a lamp now only shows when you use the keyboard, not after a click.
+
 ## 0.3.2 (build 10): 2026-10-19
 
 ### Fixed
@@ -12,7 +27,7 @@
 ## 0.3.1 (build 9): 2026-10-19
 
 ### Security
-Thanks to a friend's review:
+Thanks to Atakan who had a quick review and found the issues below.
 - **A pasted Hue key is no longer sent on the first request.** Before, the very first contact with the bridge already carried the key, before Glow had checked that the bridge is genuine. The first contact now never carries a key, and the key is used only after the bridge has proven itself.
 - **Pairing with the bridge button now requires a genuine Philips Hue Bridge.** Before, button pairing went ahead even when the bridge couldn't prove it was genuine, so someone intercepting setup could have received the new key. Both pairing paths now verify first (the certificate is signed by Philips' Hue root and issued to that bridge), then pin the certificate for the rest of setup. Every bridge that can run Glow (Hue API v2) has such a certificate.
 - New regression tests check what the first request carries, and that button pairing stops at an unverified bridge.

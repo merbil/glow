@@ -22,14 +22,13 @@ struct LampSection: Identifiable {
 /// Which screen the popover shows.
 enum Page: Equatable {
     case lights
-    case arrange
     case rename(String)          // lamp id
     case confirmForget
 }
 
 /// Tabs of the Settings window.
 enum SettingsTab: String, Hashable {
-    case general, about
+    case general, arrange, about
 }
 
 enum AppearanceSetting: String, CaseIterable, Identifiable {
@@ -146,7 +145,7 @@ final class AppModel {
     /// What the lights page shows: visible rooms with their visible lamps, in the user's order.
     var sections: [LampSection] { sections(includeHidden: false) }
 
-    /// Every room and lamp, hidden ones included (for the Arrange & Hide page).
+    /// Every room and lamp, hidden ones included (for the Lamps & Rooms tab in Settings).
     func sections(includeHidden: Bool) -> [LampSection] {
         let candidates = lamps.values.filter { includeHidden || !hiddenLampIDs.contains($0.id) }
         var assigned = Set<String>()
@@ -341,6 +340,12 @@ final class AppModel {
 
     /// Called when the popover opens; cheap safety net in case an event was missed.
     func popoverDidAppear() {
+        // Offline (e.g. Local Network was just allowed): reconnect now with a fresh session. A session
+        // opened while macOS was blocking Glow can keep failing after access is granted.
+        if !isDemo, isPaired, case .offline = connection, let client, let key = client.appKey {
+            connect(host: client.host, appKey: key)
+            return
+        }
         guard !isDemo, isPaired, client != nil, Date().timeIntervalSince(lastRefresh) > 30 else { return }
         Task { await refresh() }
     }

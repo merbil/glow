@@ -17,10 +17,6 @@ enum Snapshot {
         if args.contains("--dark-colors") { applyDarkColors(model) }
         if let i = args.firstIndex(of: "--page"), i + 1 < args.count {
             switch args[i + 1] {
-            case "arrange":
-                model.setRoomHidden("bedroom", true)
-                model.setLampHidden(model.lamps["7"]!, true)
-                model.page = .arrange
             case "forget": model.page = .confirmForget
             case "rename": model.page = .rename("5")
             default: break

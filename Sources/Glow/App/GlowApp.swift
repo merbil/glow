@@ -74,6 +74,10 @@ enum Launcher {
             }
             return
         }
+        if let i = args.firstIndex(of: "--tutorial-frames"), i + 1 < args.count {
+            MainActor.assumeIsolated { TutorialFrames.render(to: URL(fileURLWithPath: args[i + 1])) }
+            return
+        }
         if let i = args.firstIndex(of: "--render-icon"), i + 1 < args.count {
             MainActor.assumeIsolated { IconRenderer.render(to: URL(fileURLWithPath: args[i + 1])) }
             return
@@ -151,13 +155,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // No Dock icon, even when run as a bare executable during development.
         NSApp.setActivationPolicy(.accessory)
         AppDelegate.model?.applyAppearance()        // NSApp exists for sure now
+        if AppDelegate.model?.isDemo == false { Updater.shared.start() }
 
         // Hook for screenshots/testing. Off unless enabled:
         //   defaults write com.merterbil.glow enableTestHooks -bool YES
         #if !DEBUG
         guard UserDefaults.standard.bool(forKey: "enableTestHooks") else { return }
         #endif
-        // Hook for screenshots/testing: open the popover from the command line, optionally on a page:
+        // Hook for screenshots/testing: open the popover from the command line, optionally on a page
+        // ("arrange", "settings" and "about" open the Settings window instead):
         //   swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.merterbil.glow.show"), object: "arrange", userInfo: nil, deliverImmediately: true)'
         // It can only open Glow's own popover.
         DistributedNotificationCenter.default().addObserver(
@@ -167,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 switch page {
                 case "settings": AppDelegate.model?.openSettings(.general); return
-                case "arrange": AppDelegate.model?.page = .arrange
+                case "arrange": AppDelegate.model?.openSettings(.arrange); return
                 case "about": AppDelegate.model?.openSettings(.about); return
                 case "forget": AppDelegate.model?.page = .confirmForget
                 default: AppDelegate.model?.page = .lights

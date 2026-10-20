@@ -24,6 +24,7 @@ enum SelfTest {
         keyStoreTests()
         arrangeTests()
         releaseNotesTests()
+        updaterTests()
         await MockBridgeTests.run()
 
         print("Self-test: \(passed) passed, \(failures.count) failed")
@@ -233,9 +234,12 @@ enum SelfTest {
               "color lamp menu: colors, separator, rename, hide")
         check(menu(.whites(153...454)).items.count == 4, "ambiance lamp menu has the whites section")
         let single = menu(.single)
-        check(single.items.map(\.title) == ["Rename in Glow…", "Hide from Glow"], "single lamp: rename + hide only")
+        check(single.items.count == 4 && single.items[0].title == LampMenu.singleColorNote
+              && !single.items[0].isEnabled && single.items[1].isSeparatorItem
+              && single.items.suffix(2).map(\.title) == ["Rename in Glow…", "Hide from Glow"],
+              "single lamp: a disabled one-color note, separator, rename, hide")
 
-        for item in single.items { _ = (item.target as AnyObject?)?.perform(item.action) }
+        for item in single.items where item.action != nil { _ = (item.target as AnyObject?)?.perform(item.action) }
         check(fired == ["rename", "hide"], "menu items run their actions: \(fired)")
 
         let height = color.items[0].view?.frame.height ?? 0
@@ -344,6 +348,33 @@ enum SelfTest {
         check(notes.allSatisfy { !$0.lines.isEmpty }, "every version has notes")
         let parsed = ReleaseNotes.parse("# T\n\n## 9.9 (build 1): x\n### Fixed\n- **a** b\nplain\n")
         check(parsed.count == 1 && parsed[0].version == "9.9" && parsed[0].lines.count == 3, "parser handles headings, bullets, text")
+    }
+
+    // MARK: Auto-update (0.3.3)
+
+    private static func updaterTests() {
+        func answer(tag: String, dmg: String = "https://github.com/merbil/glow/releases/download/v0.3.4/Glow-0.3.4.dmg",
+                    prerelease: Bool = false) -> Data {
+            Data("""
+            {"tag_name":"\(tag)","draft":false,"prerelease":\(prerelease),"html_url":"https://github.com/merbil/glow/releases/tag/\(tag)",
+             "assets":[{"name":"notes.txt","browser_download_url":"https://github.com/merbil/glow/releases/download/\(tag)/notes.txt"},
+                       {"name":"Glow.dmg","browser_download_url":"\(dmg)"}]}
+            """.utf8)
+        }
+        let release = Updater.parse(answer(tag: "v0.3.4"))
+        check(release?.version == "0.3.4" && release?.downloadURL.lastPathComponent == "Glow-0.3.4.dmg",
+              "update: reads the version and the DMG from GitHub's answer")
+        check(Updater.parse(answer(tag: "v0.3.4", prerelease: true)) == nil, "update: ignores pre-releases")
+        check(Updater.parse(answer(tag: "v0.3.4", dmg: "https://evil.example/Glow.dmg")) == nil,
+              "update: refuses a download outside Glow's GitHub releases")
+        check(Updater.parse(answer(tag: "v0.3.4", dmg: "http://github.com/merbil/glow/releases/download/v0.3.4/Glow.dmg")) == nil,
+              "update: refuses a download over plain HTTP")
+        check(Updater.parse(answer(tag: "v1.0<script>")) == nil, "update: refuses a strange version tag")
+        check(Updater.parse(Data("not json".utf8)) == nil, "update: survives a broken answer")
+        check(Updater.isNewer("0.3.10", than: "0.3.9") && Updater.isNewer("1.0", than: "0.9.9")
+              && !Updater.isNewer("0.3.3", than: "0.3.3") && !Updater.isNewer("0.3", than: "0.3.0"),
+              "update: compares versions number by number")
+        check(!Updater.shared.isRunning, "update: no checks outside the app bundle (tests, demo)")
     }
 
     // MARK: Key storage (no Keychain prompts)

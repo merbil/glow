@@ -49,9 +49,12 @@ struct FooterView: View {
 
     private var settingsMenu: some View {
         Menu {
-            Button("Arrange & Hide…") { model.page = .arrange }
+            Button("Lamps & Rooms…") { model.openSettings(.arrange) }
             Button("Settings…") { model.openSettings(.general) }
                 .keyboardShortcut(",")
+            if let release = Updater.shared.available {
+                Button("Download Glow \(release.version)…") { Updater.shared.download() }
+            }
             if model.hiddenCount > 0 {
                 Button("Show Hidden (\(model.hiddenCount))") { model.unhideAll() }
             }

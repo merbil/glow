@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Arrange & Hide: drag rooms and lamps into the order you like, and hide what you don't need.
+/// The "Lamps & Rooms" tab of Settings: drag rooms and lamps into the order you like, and hide what you don't need.
 /// (Kept separate from the lights page, where dragging a tile sideways sets brightness.)
 @MainActor
 struct ArrangeView: View {
@@ -10,16 +10,12 @@ struct ArrangeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "Arrange & Hide", trailing: AnyView(
-                Button("Done") { model.page = .lights }
-                    .keyboardShortcut(.defaultAction)
-                    .controlSize(.small)
-            ))
             Text("Drag rooms and lamps to reorder them. Use the eye to hide things you don't need. This only changes Glow, not your Hue setup.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 18)
+                .padding(.top, 8)
                 .padding(.bottom, 10)
 
             ScrollView(.vertical, showsIndicators: true) {
@@ -31,7 +27,6 @@ struct ArrangeView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 12)
             }
-            .frame(maxHeight: Metrics.maxListHeight)
 
             Divider().padding(.horizontal, 14)
             HStack {

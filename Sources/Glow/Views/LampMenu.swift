@@ -5,6 +5,9 @@ import SwiftUI
 /// (only what the lamp supports), then Rename / Hide.
 @MainActor
 enum LampMenu {
+    /// Shown instead of the color section for lamps that can't change color.
+    static let singleColorNote = "This lamp has one fixed color"
+
     static func make(
         lamp: Lamp,
         model: AppModel? = nil,
@@ -30,6 +33,12 @@ enum LampMenu {
             item.view = host
             item.isEnabled = lamp.isReachable
             menu.addItem(item)
+            menu.addItem(.separator())
+        } else {
+            // Without this, the menu shows only Rename / Hide and looks broken.
+            let note = NSMenuItem(title: singleColorNote, action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            menu.addItem(note)
             menu.addItem(.separator())
         }
 
