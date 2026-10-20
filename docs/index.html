@@ -6,7 +6,7 @@
 <title>Glow: your Hue lamps in the Mac menu bar</title>
 <meta name="description" content="Glow puts your Philips Hue lamps one click away in the Mac menu bar. Click to toggle, drag to dim, colors, room switches, All off timer. Local only, no cloud. Free and open source.">
 <meta property="og:title" content="Glow: your Hue lamps in the Mac menu bar">
-<meta property="og:description" content="One click, no voice assistant, no phone, no cloud. Free and open source.">
+<meta property="og:description" content="One click, no Siri, Alexa or phone. Free and open source.">
 <meta property="og:image" content="https://merbil.github.io/glow/img/lights-dark.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="img/icon.png">
@@ -45,7 +45,9 @@
 
   section { padding: 72px 0 0; }
   h2 { font-size: 30px; letter-spacing: -0.01em; margin-bottom: 26px; text-align: center; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  /* Two columns, so the four cards make an even 2×2 block (one column on phones). */
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
   .card h3 { font-size: 17px; margin-bottom: 6px; }
   .card p { color: var(--muted); font-size: 15px; }
@@ -85,7 +87,7 @@
   <div class="hero">
     <img class="icon" src="img/icon.png" alt="Glow app icon">
     <h1>Your Hue lamps,<br><span>one click away.</span></h1>
-    <p class="sub">Glow lives in your Mac's menu bar. Click to switch a lamp, drag to dim, right-click for colors. No voice assistant, no phone, no cloud.</p>
+    <p class="sub">Glow lives in your Mac's menu bar, so you can click to switch a lamp, drag to dim it or right-click for colors. You don't need Siri, Alexa or your phone.</p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/merbil/glow/releases/latest">⬇︎ Download for Mac</a>
       <a class="btn ghost" href="https://github.com/merbil/glow">View on GitHub</a>
