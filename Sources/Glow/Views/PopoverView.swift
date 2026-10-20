@@ -93,16 +93,46 @@ struct WindowFitter: NSViewRepresentable {
 
     final class FitterView: NSView {
         var contentHeight: CGFloat = 0
+        private var observers: [NSObjectProtocol] = []
+        private var recentResizes: [Date] = []
+
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            if let window {
+                // SwiftUI can resize the window itself, and showing it again doesn't re-render the view.
+                observers = [NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification].map { name in
+                    NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                        DispatchQueue.main.async { self?.refit() }
+                    }
+                }
+            }
             fit()
         }
 
-        func fit() {
-            guard let window, contentHeight > 0 else { return }
+        /// A refit from a notification. If SwiftUI keeps pushing the size back, stop after a few per second.
+        private func refit() {
+            let now = Date()
+            recentResizes = recentResizes.filter { now.timeIntervalSince($0) < 1 }
+            guard recentResizes.count < 6 else {
+                Log.model.notice("popover fit: too many resizes, skipping")
+                return
+            }
+            if fit() { recentResizes.append(now) }
+        }
+
+        /// Only the menu bar window is fitted (not, say, the tutorial-frames canvas). True if it was resized.
+        @discardableResult
+        func fit() -> Bool {
+            guard let window, contentHeight > 0,
+                  String(describing: type(of: window)).contains("MenuBarExtraWindow") else { return false }
+            var resized = false
             let current = window.contentRect(forFrameRect: window.frame)
             if abs(current.height - contentHeight) > 0.5 {
+                resized = true
                 var content = current
                 content.origin.y = current.maxY - contentHeight      // keep the top edge in place
                 content.size.height = contentHeight
@@ -119,6 +149,7 @@ struct WindowFitter: NSViewRepresentable {
                 contentView.layoutSubtreeIfNeeded()
             }
             window.invalidateShadow()
+            return resized
         }
     }
 }

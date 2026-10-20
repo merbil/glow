@@ -20,7 +20,14 @@ enum Log {
 
     static func describe(_ error: Error) -> String {
         let ns = error as NSError
-        var text = "\(ns.domain) \(ns.code): \(ns.localizedDescription)"
+        return "\(code(error)): \(ns.localizedDescription)"
+    }
+
+    /// Error domain and code only, safe to log as public. The localized text can name the bridge's IP
+    /// or carry text from the bridge, so log it separately as `.private`.
+    static func code(_ error: Error) -> String {
+        let ns = error as NSError
+        var text = "\(ns.domain) \(ns.code)"
         if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError {
             text += " | underlying \(underlying.domain) \(underlying.code)"
         }

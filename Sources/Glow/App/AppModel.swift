@@ -114,6 +114,11 @@ final class AppModel {
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var lastRefresh = Date.distantPast
     @ObservationIgnored private var lastDiscovered: [DiscoveredBridge] = []
+    // Looking for a moved bridge goes online (Philips' bridge finder, Bonjour): at most once per interval.
+    @ObservationIgnored private var lastRediscovery = Date.distantPast
+    /// Set on wake and when the popover opens offline: look again after the next failed attempt, whatever the throttle says.
+    @ObservationIgnored private var rediscoverSoon = false
+    static let rediscoveryInterval: TimeInterval = 15 * 60
     // Brightness drags send at most one command at a time per lamp; the latest value wins.
     @ObservationIgnored private var pendingBrightness: [String: Double] = [:]
     @ObservationIgnored private var brightnessSenders: Set<String> = []
@@ -326,7 +331,9 @@ final class AppModel {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            MainActor.assumeIsolated { if self.client != nil { self.reconnect() } }
+            MainActor.assumeIsolated {
+                if self.client != nil { self.rediscoverSoon = true; self.reconnect() }
+            }
         }
 
         if let host = prefs.bridgeHost, let key = keyStore.get("appKey") {
@@ -343,6 +350,7 @@ final class AppModel {
         // Offline (e.g. Local Network was just allowed): reconnect now with a fresh session. A session
         // opened while macOS was blocking Glow can keep failing after access is granted.
         if !isDemo, isPaired, case .offline = connection, let client, let key = client.appKey {
+            rediscoverSoon = true       // the failure count restarts below; this keeps rediscovery from starving
             connect(host: client.host, appKey: key)
             return
         }
@@ -373,7 +381,8 @@ final class AppModel {
             var quietReconnect = false
 
             // Can't load the state: that's a failure; don't sit on a stream that can't work.
-            let refreshed = await refresh()
+            // Without a stored pin the bridge must prove itself first; only then is the key used.
+            let refreshed = await pinVerifiedBridge(client) ? await refresh() : false
             Log.model.info("loop: refresh \(refreshed ? "ok" : "FAILED", privacy: .public), failures so far \(self.consecutiveFailures)")
             if refreshed {
                 let streamStart = Date()
@@ -381,6 +390,7 @@ final class AppModel {
                     for try await batch in client.events() {
                         connection = .live
                         consecutiveFailures = 0
+                        rediscoverSoon = false
                         apply(batch)
                     }
                     // Closed cleanly. Fine after a while; a bridge that closes at once is failing.
@@ -407,8 +417,9 @@ final class AppModel {
             Log.model.error("loop: failure #\(failures) → offline, retry in \(String(describing: self.retryDelay(failures)), privacy: .public)")
             if case .offline = connection {} else { connection = .offline(offlineReason(nil, client)) }
             // Its old address may now belong to another device (which would also look like a
-            // certificate change), so look for the bridge by its id every third failure either way.
-            if failures % 3 == 0 { await rediscoverBridge() }
+            // certificate change), so look for the bridge by its id every third failure either way
+            // (but at most once per `rediscoveryInterval`, unless wake or opening the popover asked for it).
+            if failures % 3 == 0 || rediscoverSoon { await rediscoverBridge() }
             try? await Task.sleep(for: retryDelay(failures))
         }
     }
@@ -464,7 +475,7 @@ final class AppModel {
             if self.client === client, isPaired { handleUnauthorized() }
             return false
         } catch {
-            Log.model.error("refresh failed: \(Log.describe(error), privacy: .public)")
+            Log.model.error("refresh failed: \(Log.code(error), privacy: .public) \(error.localizedDescription, privacy: .private)")
             if self.client === client, !Task.isCancelled {
                 connection = .offline(offlineReason(error, client))
             }
@@ -475,6 +486,35 @@ final class AppModel {
     private func offlineReason(_ error: Error?, _ client: HueClient) -> String {
         if case HueError.localNetworkDenied? = error { return HueError.localNetworkDenied.localizedDescription }
         return client.trust.pinMismatch ? HueError.certificateChanged.localizedDescription : "Can't reach the Hue Bridge"
+    }
+
+    /// Setups from before pinning have no stored pin, and a client without one would trust any certificate.
+    /// Ask the bridge for its config without the key first; it must be a genuine bridge with the id we
+    /// paired with. Then its certificate is pinned and the key goes out. False: not now (can't reach it, or it
+    /// isn't our bridge, in which case Glow goes back to pairing).
+    private func pinVerifiedBridge(_ client: HueClient) async -> Bool {
+        guard prefs.certificateFingerprint == nil, requireGenuineBridge else { return true }
+        let trust = BridgeTrust(host: client.host, pinnedFingerprint: nil)
+        let probe = HueClient(host: client.host, appKey: nil, trust: trust, protocolClasses: testProtocolClasses)
+        defer { probe.invalidate() }
+        let config: BridgeConfig
+        do {
+            config = try await probe.fetchConfig()
+        } catch {
+            if self.client === client, !Task.isCancelled { connection = .offline(offlineReason(error, client)) }
+            return false
+        }
+        guard self.client === client, !Task.isCancelled else { return false }
+        guard let proven = trust.verifiedBridgeID, proven == prefs.bridgeID?.lowercased(),
+              proven == config.bridgeid.lowercased(), let seen = trust.observedFingerprint else {
+            Log.model.error("connect: no pin and the bridge didn't prove it's ours; stopped before using the key")
+            tearDownConnection()
+            onboarding = .failed(Self.notGenuineMessage)
+            return false
+        }
+        prefs.certificateFingerprint = seen
+        client.trust.pinnedFingerprint = seen
+        return true
     }
 
     /// Older setups may have no stored pin; pin the certificate seen on the first good connection.
@@ -536,21 +576,30 @@ final class AppModel {
 
     /// The bridge may get a new IP address from the router. Find it again by its id.
     private func rediscoverBridge() async {
-        guard let bridgeID = prefs.bridgeID, let key = keyStore.get("appKey"), let original = client else { return }
+        let asked = rediscoverSoon
+        rediscoverSoon = false
+        guard asked || Date().timeIntervalSince(lastRediscovery) >= Self.rediscoveryInterval else { return }
+        guard let bridgeID = prefs.bridgeID?.lowercased(), let key = keyStore.get("appKey"), let original = client else { return }
+        lastRediscovery = Date()
         let candidates = await discover()
-        for candidate in candidates where candidate.host != original.host {
+        for candidate in candidates where candidate.host != original.host && HostRules.isPrivateAddress(candidate.host) {
+            // Bonjour says whose bridge it is: don't even connect to someone else's.
+            if let advertised = candidate.bridgeID, advertised.lowercased() != bridgeID { continue }
             // The user may have forgotten the bridge (or been signed out) while we searched.
             guard !Task.isCancelled, client === original else { return }
-            let probe = HueClient(host: candidate.host, appKey: nil,
-                                  trust: BridgeTrust(host: candidate.host, pinnedFingerprint: prefs.certificateFingerprint))
+            let trust = BridgeTrust(host: candidate.host, pinnedFingerprint: prefs.certificateFingerprint)
+            let probe = HueClient(host: candidate.host, appKey: nil, trust: trust, protocolClasses: testProtocolClasses)
             defer { probe.invalidate() }
+            // Only the certificate proves who answered; the id in the JSON is whatever the device says.
             if let config = try? await probe.fetchConfig(),
-               config.bridgeid.lowercased() == bridgeID.lowercased() {
+               requireGenuineBridge ? trust.verifiedBridgeID == bridgeID : config.bridgeid.lowercased() == bridgeID {
                 guard !Task.isCancelled, client === original else { return }
+                if prefs.certificateFingerprint == nil { prefs.certificateFingerprint = trust.observedFingerprint }
                 prefs.bridgeHost = candidate.host
                 original.finishAndInvalidate()      // let commands already on their way finish
                 client = HueClient(host: candidate.host, appKey: key,
-                                   trust: BridgeTrust(host: candidate.host, pinnedFingerprint: prefs.certificateFingerprint))
+                                   trust: BridgeTrust(host: candidate.host, pinnedFingerprint: prefs.certificateFingerprint),
+                                   protocolClasses: testProtocolClasses)
                 return
             }
         }
@@ -976,13 +1025,8 @@ final class AppModel {
         }
     }
 
-    /// An IPv4/IPv6 address or a simple host name, and nothing that could change the URL.
-    static func isValidHost(_ host: String) -> Bool {
-        guard !host.isEmpty, host.count <= 253 else { return false }
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:")
-        guard host.unicodeScalars.allSatisfy(allowed.contains) else { return false }
-        return URL(string: "https://\(host.contains(":") ? "[\(host)]" : host)/") != nil
-    }
+    /// A private IP address or a local-style name (see `HostRules`), and nothing that could change the URL.
+    static func isValidHost(_ host: String) -> Bool { HostRules.isValidHost(host) }
 
     private static func pairingFailure(_ error: Error, host: String) -> String {
         if case HueError.localNetworkDenied = error { return HueError.localNetworkDenied.localizedDescription }

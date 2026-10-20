@@ -1,5 +1,25 @@
 # Glow release notes
 
+## 0.3.4 (build 12): 2026-10-20
+
+### Added
+- Settings has a new switch, **Check for updates automatically**. When it's off, Glow never checks on its own, but Check Now still works.
+
+### Security
+- Glow now sends its key only to your bridge on your local network. Before, a forged answer from Philips' bridge-finder could have pointed Glow to another server, which would then have received the key.
+- When your bridge gets a new address, Glow only follows it after the bridge proves its ID with its certificate. Also, older setups without a saved certificate now check that the bridge is genuine before the key is used.
+- Away from home, Glow looks for your bridge at most every 15 minutes, instead of about 25 to 30 times an hour.
+- The update check is stricter about the download link and the version number, and it finds Glow's releases by the repository's permanent ID instead of its name.
+- The bridge address and timer Glow saved earlier are checked again before Glow uses them.
+
+### Fixed
+- The All off button and the countdown no longer show small vertical lines at their edges.
+- A new version Glow found stays visible after a restart or a failed check. Also, an answer from GitHub that Glow can't read now shows "Couldn't check" instead of "You're up to date".
+- VoiceOver reads each Settings tab as one button and says which one is selected.
+
+### Privacy
+- The website and README now say exactly when Glow goes online.
+
 ## 0.3.3 (build 11): 2026-10-20
 
 ### Added

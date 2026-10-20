@@ -38,6 +38,14 @@ final class BridgeTrust: NSObject, URLSessionDelegate, URLSessionDataDelegate, @
     /// Nil for impostors (and for very old bridges with self-signed certificates).
     var verifiedBridgeID: String? { lock.withLock { _verifiedBridgeID } }
 
+    /// Host names compared without case, IPv6 brackets or a trailing dot.
+    static func normalized(_ host: String) -> String {
+        var name = host.lowercased()
+        if name.hasPrefix("["), name.hasSuffix("]") { name = String(name.dropFirst().dropLast()) }
+        if name.hasSuffix(".") { name.removeLast() }
+        return name
+    }
+
     /// Never follow redirects: the bridge doesn't use them, and a redirect would carry the
     /// hue-application-key header (and v1 keys in the path) to another host.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
@@ -63,13 +71,15 @@ final class BridgeTrust: NSObject, URLSessionDelegate, URLSessionDataDelegate, @
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        // Bridge sessions never use the system's trust: a challenge for any other host (or of any
+        // other kind) is cancelled, so a certificate from a public CA can't stand in for the bridge.
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let expected = host, Self.normalized(challenge.protectionSpace.host) == Self.normalized(expected),
               let trust = challenge.protectionSpace.serverTrust,
-              challenge.protectionSpace.host == host,
               let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
               let leaf = chain.first
         else {
-            completionHandler(.performDefaultHandling, nil)
+            completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
 

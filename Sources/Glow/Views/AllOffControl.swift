@@ -92,6 +92,9 @@ private struct PillShape: View {
     let fill: Color
     let stroke: Color
     var body: some View {
-        Capsule().fill(fill).overlay(Capsule().strokeBorder(stroke, lineWidth: 1))
+        // A capsule's outline drew small straight stubs at both ends; a rounded rectangle with
+        // half the height as radius looks the same without them.
+        let shape = RoundedRectangle(cornerRadius: 14, style: .circular)
+        return shape.fill(fill).overlay(shape.strokeBorder(stroke, lineWidth: 1))
     }
 }

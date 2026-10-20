@@ -49,8 +49,8 @@ Already use Home Assistant? On the pairing screen you can paste its Hue key inst
 
 ## Privacy & security
 
-- Glow talks **only to your Hue Bridge, on your home network**: no account, no cloud, no analytics.
-  - Glow only goes online for two things. It asks Philips' bridge-finder (`discovery.meethue.com`) for your bridge during setup. Also, it asks GitHub once a day for the latest version number.
+- Glow controls your lamps **directly through your Hue Bridge, on your home network**, with no account, cloud service or analytics involved.
+  - Glow only goes online for two things. It asks Philips' bridge-finder (`discovery.meethue.com`) where your bridge is, during setup and whenever it can't find it any more. Also, it asks GitHub once a day for the latest version number, which you can turn off in Settings. It never sends your lamps, your usage or any account data.
 - The bridge key is stored in a private file that only your user account can read (`~/Library/Application Support/Glow`).
 - Glow checks that the bridge is a **genuine Philips Hue Bridge**:
   - its certificate must be signed by Philips' Hue root and issued to that bridge
@@ -65,7 +65,7 @@ You only need Apple's Command Line Tools (`xcode-select --install`). Xcode works
 ```sh
 git clone https://github.com/merbil/glow && cd glow
 swift build && .build/debug/Glow --demo        # run with sample lamps, no bridge needed
-.build/debug/Glow --selftest                    # ~370 built-in checks, including a fake Hue Bridge
+.build/debug/Glow --selftest                    # ~500 built-in checks, including a fake Hue Bridge
 scripts/build-app.sh --install                  # build Glow.app and install it to /Applications
 scripts/make-dmg.sh                             # build the installer DMG
 ```

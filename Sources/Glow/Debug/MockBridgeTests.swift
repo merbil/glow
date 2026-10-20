@@ -239,12 +239,45 @@ enum MockBridgeTests {
         redirecting.invalidate()
 
         // Invalid bridge addresses are rejected instead of crashing.
-        for bad in ["192.168 .1.1", "a\"b", "%zz", "evil.com/@x", "1.2.3.4#", ""] {
+        for bad in ["192.168 .1.1", "a\"b", "%zz", "evil.com/@x", "1.2.3.4#", "",
+                    "evil.com:443", "192.168.1.20:443", "user@192.168.1.20", "192.168.1.20/x", "[fe80::1]", "8.8.8.8",
+                    "172.32.0.1", "evil.com", "a.b.c.example", "2130706433", "0x7f000001", "10.1", "010.0.0.1",
+                    "::1", "2001:db8::1", "::ffff:10.0.0.1", "fe80::1%en0", "hue.local.", "-a.local", "a..local"] {
             expect(!AppModel.isValidHost(bad), "rejects bad address \(bad)")
         }
-        for good in ["192.168.1.20", "hue-bridge.local", "fe80::1"] {
+        for good in ["192.168.1.20", "10.0.0.2", "172.16.0.1", "172.31.255.254", "169.254.1.1", "hue-bridge.local", "Hue.LOCAL",
+                     "bridge", "bridge.lan", "x.home", "x.home.arpa", "x.internal", "hue.fritz.box", "hue.localdomain", "fe80::1", "fd12:3456::1", "fc00::1"] {
             expect(AppModel.isValidHost(good), "accepts \(good)")
         }
+        // Discovered hosts are stricter: private or link-local IP literals only, never names.
+        for found in ["192.168.1.20", "10.1.2.3", "172.20.0.1", "169.254.9.9", "fe80::1", "fdab::1"] {
+            expect(HostRules.isPrivateAddress(found), "discovery accepts \(found)")
+        }
+        for dropped in ["hue.local", "bridge", "1.2.3.4", "evil.com", "evil.com:443", "192.168.1.20:443", "[fe80::1]", "172.15.0.1", "192.169.0.1"] {
+            expect(!HostRules.isPrivateAddress(dropped), "discovery drops \(dropped)")
+        }
+        // IPv6 literals are bracketed in the URL.
+        let v6 = HueClient(host: "fe80::1", appKey: nil, trust: BridgeTrust(host: "fe80::1", pinnedFingerprint: nil),
+                           protocolClasses: [MockBridge.self])
+        _ = try? await v6.fetchConfig()
+        expect(MockBridge.calls.last?.path == "/api/0/config", "IPv6 host builds a working URL")
+        v6.invalidate()
+        // Host names compare without case, brackets or a trailing dot.
+        expect(BridgeTrust.normalized("[FE80::1]") == "fe80::1" && BridgeTrust.normalized("Hue.Local.") == "hue.local",
+               "host comparison normalizes case, brackets and trailing dot")
+        // A stored host that isn't valid reads as "not paired".
+        let tampered = Preferences.scratch()
+        tampered.bridgeHost = "evil.com:443"
+        expect(tampered.bridgeHost == nil, "stored host with a port is ignored")
+        tampered.bridgeHost = "192.168.1.20"
+        expect(tampered.bridgeHost == "192.168.1.20", "stored private address is kept")
+        // The bridge timer id goes into a URL: digits only.
+        for bad in ["../lights/3", "", "1/2", "٣", "1 2", "7?x"] {
+            tampered.pendingTimer = (bad, Date().addingTimeInterval(60))
+            expect(tampered.pendingTimer == nil, "timer id \(bad.debugDescription) is ignored")
+        }
+        tampered.pendingTimer = ("12", Date().addingTimeInterval(60))
+        expect(tampered.pendingTimer?.id == "12", "numeric timer id is kept")
         // Names can't carry invisible formatting tricks.
         expect(cleanName("Kitchen\u{202E}nehctik") == "Kitchennehctik", "bidi override stripped")
         expect(cleanName(String(repeating: "x", count: 500)).count == 64, "names capped")
@@ -286,12 +319,13 @@ enum MockBridgeTests {
         let model = AppModel(demo: false, preferences: prefs, keyStore: .selfTest)
         var searches = 0
         model.discover = { searches += 1; return [] }
+        model.requireGenuineBridge = false          // the mock has no certificate (and no stored pin to skip the check)
         model.retryDelay = { _ in .milliseconds(20) }
         model.useForTesting(makeClient())
         let loop = Task { await model.runEventLoop() }
         try? await Task.sleep(for: .milliseconds(600))
-        expect(model.consecutiveFailures >= 3, "unreachable bridge counts failures: \(model.consecutiveFailures)")
-        expect(searches >= 1, "rediscovery runs after 3 failures (searched \(searches)×)")
+        expect(model.consecutiveFailures >= 6, "unreachable bridge counts failures: \(model.consecutiveFailures)")
+        expect(searches == 1, "rediscovery runs after 3 failures, then at most once per 15 minutes (searched \(searches)×)")
         if case .offline = model.connection { expect(true, "") } else { expect(false, "shows offline: \(model.connection)") }
         loop.cancel()
         await settle()
@@ -301,6 +335,7 @@ enum MockBridgeTests {
         MockBridge.on("GET /eventstream/clip/v2", 200, "")
         let model2 = AppModel(demo: false, preferences: prefs, keyStore: .selfTest)
         model2.discover = { [] }
+        model2.requireGenuineBridge = false
         model2.retryDelay = { _ in .milliseconds(20) }
         model2.useForTesting(makeClient())
         let loop2 = Task { await model2.runEventLoop() }
@@ -309,12 +344,49 @@ enum MockBridgeTests {
         expect(model2.lamps.count == 3, "lamps still loaded meanwhile")
         loop2.cancel()
 
+        // 2b) Rediscovery only accepts a bridge whose certificate proves its id, not one that merely says so in JSON.
+        await settle(); MockBridge.reset()
+        MockBridge.on("GET /clip/v2/resource/light", 500, "{}")
+        MockBridge.on("GET /clip/v2/resource/room", 500, "{}")
+        MockBridge.on("GET /clip/v2/resource/zigbee_connectivity", 500, "{}")
+        MockBridge.on("GET /api/0/config", 200, #"{"name":"Fake","bridgeid":"001788FFFE000000"}"#)
+        let moved = Preferences.scratch()
+        moved.bridgeID = "001788fffe000000"
+        moved.bridgeHost = "10.0.0.2"
+        moved.certificateFingerprint = String(repeating: "ab", count: 32)
+        KeyStore.selfTest.set("KEY", for: "appKey")
+        var asked = 0
+        func rediscoveryRun(genuine: Bool, found: [DiscoveredBridge]) async -> String? {
+            moved.bridgeHost = "10.0.0.2"
+            let m = AppModel(demo: false, preferences: moved, keyStore: .selfTest)
+            m.testProtocolClasses = [MockBridge.self]
+            m.requireGenuineBridge = genuine
+            m.discover = { asked += 1; return found }
+            m.retryDelay = { _ in .milliseconds(20) }
+            m.useForTesting(makeClient())
+            let task = Task { await m.runEventLoop() }
+            try? await Task.sleep(for: .milliseconds(300))
+            task.cancel()
+            await settle()
+            return moved.bridgeHost
+        }
+        let forged = await rediscoveryRun(genuine: true, found: [DiscoveredBridge(host: "10.0.0.9")])
+        expect(asked == 1 && forged == "10.0.0.2", "a forged JSON bridge id doesn't move the bridge (host \(forged ?? "nil"))")
+        let other = await rediscoveryRun(genuine: false, found: [DiscoveredBridge(host: "10.0.0.9", bridgeID: "001788FFFE111111")])
+        expect(other == "10.0.0.2", "a Bonjour bridge advertising another id is skipped")
+        let publicHost = await rediscoveryRun(genuine: false, found: [DiscoveredBridge(host: "8.8.8.8")])
+        expect(publicHost == "10.0.0.2", "a public address is never probed")
+        let moved1 = await rediscoveryRun(genuine: false, found: [DiscoveredBridge(host: "10.0.0.9", bridgeID: "001788fffe000000")])
+        expect(moved1 == "10.0.0.9", "a matching bridge is followed (mock without TLS)")
+        KeyStore.selfTest.delete("appKey")
+
         // 3) Revoked key during the loop: it stops and returns to onboarding.
         await settle(); MockBridge.reset()
         MockBridge.on("GET /clip/v2/resource/light", 403, "{}")
         MockBridge.on("GET /clip/v2/resource/room", 403, "{}")
         MockBridge.on("GET /clip/v2/resource/zigbee_connectivity", 403, "{}")
         let model3 = AppModel(demo: false, preferences: prefs, keyStore: .selfTest)
+        model3.requireGenuineBridge = false
         model3.useForTesting(makeClient())
         let loop3 = Task { await model3.runEventLoop() }
         try? await Task.sleep(for: .milliseconds(300))

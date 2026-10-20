@@ -19,6 +19,7 @@ enum HueRootCA {
               let trust else { return nil }
         SecTrustSetAnchorCertificates(trust, [root] as CFArray)
         SecTrustSetAnchorCertificatesOnly(trust, true)
+        SecTrustSetNetworkFetchAllowed(trust, false)        // a forged leaf can't make Glow fetch a URL of its choosing
         guard SecTrustEvaluateWithError(trust, nil) else { return nil }
         return (SecCertificateCopySubjectSummary(leaf) as String?)?.lowercased()
     }

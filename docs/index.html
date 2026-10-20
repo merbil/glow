@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glow: your Hue lamps in the Mac menu bar</title>
-<meta name="description" content="Glow puts your Philips Hue lamps one click away in the Mac menu bar. Click to toggle, drag to dim, colors, room switches, All off timer. Local only, no cloud. Free and open source.">
+<meta name="description" content="Glow puts your Philips Hue lamps one click away in the Mac menu bar. Click to toggle, drag to dim, colors, room switches, All off timer. Works locally with no account needed. Free and open source.">
 <meta property="og:title" content="Glow: your Hue lamps in the Mac menu bar">
 <meta property="og:description" content="One click, no Siri, Alexa or phone. Free and open source.">
 <meta property="og:image" content="https://merbil.github.io/glow/img/lights-dark.png">
@@ -135,8 +135,8 @@
     </div>
 
     <div class="grid">
-      <div class="card"><h3>🔒 Private by design</h3><p>Glow only talks to your Hue Bridge on your home network, so there's no account to create, and nothing goes to the cloud or to analytics.</p></div>
-      <div class="card"><h3>🛡 Verified bridge</h3><p>Glow checks that your bridge is a genuine Philips Hue Bridge and then pins its certificate. Your key never leaves your home network.</p></div>
+      <div class="card"><h3>🔒 Private by design</h3><p>Glow controls your lamps through your Hue Bridge on your home network, so there's no account to create and no analytics. Other than that, it only goes online to find your bridge and to check for a new version (you can turn that off in Settings).</p></div>
+      <div class="card"><h3>🛡 Verified bridge</h3><p>Glow checks that your bridge is a genuine Philips Hue Bridge and then pins its certificate. After that, your key only goes to that bridge, on your home network.</p></div>
       <div class="card"><h3>⚡️ Live</h3><p>If someone changes a lamp from the Hue app, a wall switch or a voice assistant, Glow shows it right away.</p></div>
       <div class="card"><h3>🌗 Feels native</h3><p>It follows dark and light mode, works with the keyboard and VoiceOver, and respects Reduce Motion. It runs natively on both Apple Silicon and Intel Macs.</p></div>
     </div>
@@ -159,13 +159,13 @@
     <details><summary>Why does macOS say Glow "can't be opened"?</summary>
       <p>Glow is a free side project, so it isn't signed through Apple's paid developer program. macOS asks you to confirm once via System Settings → Privacy &amp; Security → Open Anyway. The source code is public on GitHub, and you can build it yourself.</p></details>
     <details><summary>Why does it ask about my local network?</summary>
-      <p>That's how Glow reaches your Hue Bridge. Other than that, it only talks to Philips' bridge-finder during setup and to GitHub once a day to look for a new version.</p></details>
+      <p>That's how Glow reaches your Hue Bridge. Other than that, it asks Philips' bridge-finder where your bridge is (during setup, or when it can't find it any more), and it asks GitHub once a day for the latest version. You can turn the daily check off in Settings.</p></details>
     <details><summary>Do I have to press the button on the bridge?</summary>
       <p>Once, during setup. That's how the bridge knows you're allowed to control it. If Home Assistant already controls your lights, you can paste its key instead.</p></details>
     <details><summary>Does it work without a Hue Bridge?</summary>
       <p>No. Glow needs a Philips Hue Bridge on the same network. Bluetooth-only Hue bulbs aren't supported.</p></details>
     <details><summary>Is it safe?</summary>
-      <p>Glow stores the bridge key in a private file only you can read, verifies the bridge is genuine before talking to it, never follows redirects, and doesn't send data anywhere. It went through a security review and attack tests, and the code is open for anyone to check.</p></details>
+      <p>Glow stores the bridge key in a private file only you can read, verifies the bridge is genuine before talking to it, and never follows redirects. Also, it never sends your lamps, your usage or any account data anywhere. It went through a security review and attack tests, and the code is open for anyone to check.</p></details>
     <details><summary>What's next?</summary>
       <p>A Nest thermostat card showing current and target temperature. Follow the project on GitHub.</p></details>
   </section>

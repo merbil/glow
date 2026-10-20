@@ -94,7 +94,7 @@ final class HueClient: @unchecked Sendable {
             Log.bridge.info("\(label, privacy: .public) → HTTP \(status) (\(data.count) bytes, \(Int(Date().timeIntervalSince(start) * 1000)) ms)")
             return (data, response)
         } catch {
-            Log.bridge.error("\(label, privacy: .public) failed after \(Int(Date().timeIntervalSince(start) * 1000)) ms: \(Log.describe(error), privacy: .public)")
+            Log.bridge.error("\(label, privacy: .public) failed after \(Int(Date().timeIntervalSince(start) * 1000)) ms: \(Log.code(error), privacy: .public) \(error.localizedDescription, privacy: .private)")
             throw Self.translate(error)
         }
     }
@@ -258,7 +258,7 @@ final class HueClient: @unchecked Sendable {
                     // Pass the trust delegate per task too: bytes(for:) doesn't consult the session's.
                     do { (bytes, response) = try await streamSession.bytes(for: req, delegate: trust) }
                     catch {
-                        Log.bridge.error("event stream: open failed: \(Log.describe(error), privacy: .public)")
+                        Log.bridge.error("event stream: open failed: \(Log.code(error), privacy: .public) \(error.localizedDescription, privacy: .private)")
                         throw HueClient.translate(error)
                     }
                     let status = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -283,7 +283,7 @@ final class HueClient: @unchecked Sendable {
                     continuation.finish()
                 } catch {
                     if !(error is CancellationError) {
-                        Log.bridge.error("event stream: error: \(Log.describe(error), privacy: .public)")
+                        Log.bridge.error("event stream: error: \(Log.code(error), privacy: .public) \(error.localizedDescription, privacy: .private)")
                     }
                     continuation.finish(throwing: error)
                 }
@@ -313,7 +313,7 @@ final class HueClient: @unchecked Sendable {
 
     private func request(_ path: String, method: String = "GET") -> URLRequest {
         // Hosts are validated before a client is created; fall back to an unroutable URL rather than crash.
-        let url = URL(string: "https://\(host)\(port.map { ":\($0)" } ?? "")\(path)") ?? URL(string: "https://invalid.invalid/")!
+        let url = URL(string: "https://\(host.contains(":") ? "[\(host)]" : host)\(port.map { ":\($0)" } ?? "")\(path)") ?? URL(string: "https://invalid.invalid/")!
         var req = URLRequest(url: url)
         req.httpMethod = method
         if let appKey { req.setValue(appKey, forHTTPHeaderField: "hue-application-key") }

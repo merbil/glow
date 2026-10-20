@@ -35,6 +35,7 @@ struct SettingsView: View {
                 Image(systemName: icon)
                     .font(.system(size: 18))
                     .frame(height: 22)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.system(size: 11))
             }
@@ -48,7 +49,9 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut(key, modifiers: .command)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -75,6 +78,8 @@ private struct GeneralTab: View {
     private var updater: Updater { Updater.shared }
 
     private var latestText: String {
+        // A release found earlier stays visible while a check runs or fails.
+        if let release = updater.available, updater.state != .checking { return release.version }
         switch updater.state {
         case .idle: return "Not checked yet"
         case .checking: return "Checking…"
@@ -99,6 +104,9 @@ private struct GeneralTab: View {
                 ))
             }
             Section("Updates") {
+                Toggle("Check for updates automatically", isOn: Binding(
+                    get: { updater.automaticChecks }, set: { updater.automaticChecks = $0 }
+                ))
                 LabeledContent("Installed version", value: updater.currentVersion)
                 LabeledContent("Latest version", value: latestText)
                 HStack {

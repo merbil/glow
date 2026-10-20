@@ -25,6 +25,7 @@ enum SelfTest {
         arrangeTests()
         releaseNotesTests()
         updaterTests()
+        trustTests()
         await MockBridgeTests.run()
 
         print("Self-test: \(passed) passed, \(failures.count) failed")
@@ -374,7 +375,110 @@ enum SelfTest {
         check(Updater.isNewer("0.3.10", than: "0.3.9") && Updater.isNewer("1.0", than: "0.9.9")
               && !Updater.isNewer("0.3.3", than: "0.3.3") && !Updater.isNewer("0.3", than: "0.3.0"),
               "update: compares versions number by number")
+        Updater.shared.start()      // this binary is not in a .app, so the guard must keep it off
         check(!Updater.shared.isRunning, "update: no checks outside the app bundle (tests, demo)")
+
+        // The download must be exactly this version's DMG in Glow's own releases.
+        let base = "https://github.com/merbil/glow/releases/download"
+        func allowed(_ url: String, _ version: String = "0.3.4") -> Bool {
+            URL(string: url).map { Updater.isAllowedDownload($0, version: version) } ?? false
+        }
+        check(allowed("\(base)/v0.3.4/Glow-0.3.4.dmg"), "update: the real URL shape passes")
+        let bad = [
+            "\(base)/../../../../attacker/repo/releases/download/v0.3.4/Glow.dmg": "dot segments",
+            "\(base)/%2e%2e/%2e%2e/attacker/repo/releases/download/v0.3.4/Glow.dmg": "%2e%2e",
+            "\(base)/..%2f..%2fattacker/repo/releases/download/v0.3.4/Glow.dmg": "..%2f",
+            "\(base)/v0.3.4/%2E%2E%2FGlow.dmg": "%2E and %2F",
+            "\(base)/v0.3.4\\Glow.dmg": "backslash",
+            "https://github.com:8443/merbil/glow/releases/download/v0.3.4/Glow.dmg": "port",
+            "https://evil@github.com/merbil/glow/releases/download/v0.3.4/Glow.dmg": "user",
+            "https://evil:pw@github.com/merbil/glow/releases/download/v0.3.4/Glow.dmg": "user and password",
+            "\(base)/v0.3.4/Glow.dmg?x=1": "query",
+            "\(base)/v0.3.4/Glow.dmg#frag": "fragment",
+            "\(base)/v0.3.5/Glow.dmg": "tag that is not this version",
+            "\(base)/0.3.4/Glow.dmg": "tag without the v",
+            "\(base)/v0.3.4/Glow.zip": "not a DMG",
+            "\(base)/v0.3.4/sub/Glow.dmg": "extra path segment",
+            "\(base)/v0.3.4": "missing file",
+            "https://github.com/other/glow/releases/download/v0.3.4/Glow.dmg": "other owner",
+            "https://GITHUB.COM/merbil/glow/releases/download/v0.3.4/Glow.dmg": "other host spelling",
+            "http://github.com/merbil/glow/releases/download/v0.3.4/Glow.dmg": "plain HTTP",
+        ]
+        for (url, why) in bad { check(!allowed(url), "update: refuses \(why)") }
+
+        // Versions: ASCII digits, one to four numbers, no empty parts, at most 32 characters.
+        for good in ["0", "1.2", "0.3.4", "1.2.3.4"] { check(Updater.isValidVersion(good), "version \(good) is valid") }
+        for evil in ["", "1..2", ".1", "1.", "1.2.3.4.5", "٣.1", "½", "Ⅻ", "1.0-rc1", "1.0<script>", "v1.0", " 1.0",
+                     String(repeating: "1", count: 33)] {
+            check(!Updater.isValidVersion(evil), "version \(evil.prefix(12).debugDescription) is refused")
+        }
+        check(Updater.isNewer("0.3.0", than: "0.3") == false && Updater.isNewer("0.3.1", than: "0.3")
+              && !Updater.isNewer("0.3", than: "0.3.1"), "update: versions of unequal length compare")
+
+        // An answer that can't be used is a failed check (retried within the hour), not "up to date".
+        let suite = "com.merterbil.glow.scratch.updater"
+        UserDefaults().removePersistentDomain(forName: suite)
+        let scratch = UserDefaults(suiteName: suite)!
+        let updater = Updater(defaults: scratch)
+        check(updater.automaticChecks && updater.state == .idle, "update: new setup checks automatically, nothing known yet")
+        updater.finish(with: Data(#"{"tag_name":"v9.9.9","assets":[{"name":"notes.txt","browser_download_url":"\#(base)/v9.9.9/notes.txt"}]}"#.utf8))
+        check(updater.state == .failed && scratch.object(forKey: "lastUpdateCheck") == nil, "update: a release without a DMG is a failure")
+        updater.finish(with: Data("not json".utf8))
+        check(updater.state == .failed && scratch.object(forKey: "lastUpdateCheck") == nil, "update: an unparseable answer is a failure")
+
+        // A found release survives a restart and a failed check; it is checked again when loaded.
+        updater.finish(with: answer(tag: "v9.9.9", dmg: "\(base)/v9.9.9/Glow-9.9.9.dmg"))
+        check(updater.available?.version == "9.9.9" && scratch.object(forKey: "lastUpdateCheck") != nil, "update: newer release is kept")
+        updater.finish(with: Data("not json".utf8))
+        check(updater.state == .failed && updater.available?.version == "9.9.9", "update: a failed check doesn't hide it")
+        check(Updater(defaults: scratch).available?.version == "9.9.9", "update: remembered across a relaunch")
+        scratch.set("\(base)/../../../x/y/releases/download/v9.9.9/Glow.dmg", forKey: "latestReleaseURL")
+        check(Updater(defaults: scratch).available == nil, "update: a tampered remembered URL is refused")
+        scratch.set("\(base)/v9.9.9/Glow-9.9.9.dmg", forKey: "latestReleaseURL")
+        scratch.set("0.0.1", forKey: "latestReleaseVersion")
+        check(Updater(defaults: scratch).available == nil, "update: a remembered release that isn't newer is dropped")
+        UserDefaults().removePersistentDomain(forName: suite)
+
+        // The setting, and when a check is due. A last check in the future counts as due.
+        let now = Date()
+        check(Updater.isDue(last: nil, now: now) && !Updater.isDue(last: now.addingTimeInterval(-3600), now: now)
+              && Updater.isDue(last: now.addingTimeInterval(-90_000), now: now), "update: due after a day")
+        check(Updater.isDue(last: now.addingTimeInterval(86_400 * 400), now: now), "update: a last check in the future is due")
+        let off = Updater(defaults: scratch)
+        off.automaticChecks = false
+        check(scratch.object(forKey: "autoUpdateCheck") as? Bool == false && !Updater(defaults: scratch).automaticChecks,
+              "update: the automatic setting is remembered")
+        UserDefaults().removePersistentDomain(forName: suite)
+        check(Updater.latestReleaseURL.path == "/repositories/\(Updater.repositoryID)/releases/latest",
+              "update: asks for the release by repository ID")
+    }
+
+    // MARK: Bridge trust
+
+    /// Stands in for the URL loading system, which is what normally supplies a challenge's sender.
+    private final class NoSender: NSObject, URLAuthenticationChallengeSender {
+        func use(_ credential: URLCredential, for challenge: URLAuthenticationChallenge) {}
+        func continueWithoutCredential(for challenge: URLAuthenticationChallenge) {}
+        func cancel(_ challenge: URLAuthenticationChallenge) {}
+    }
+
+    private static func trustTests() {
+        func disposition(host: String, expecting: String?) -> URLSession.AuthChallengeDisposition? {
+            let trust = BridgeTrust(host: expecting, pinnedFingerprint: nil)
+            let space = URLProtectionSpace(host: host, port: 443, protocol: "https", realm: nil,
+                                           authenticationMethod: NSURLAuthenticationMethodServerTrust)
+            let challenge = URLAuthenticationChallenge(protectionSpace: space, proposedCredential: nil, previousFailureCount: 0,
+                                                       failureResponse: nil, error: nil, sender: NoSender())
+            var result: URLSession.AuthChallengeDisposition?
+            trust.urlSession(URLSession.shared, didReceive: challenge) { disposition, _ in result = disposition }
+            return result
+        }
+        check(disposition(host: "evil.example", expecting: "192.168.1.20") == .cancelAuthenticationChallenge,
+              "trust: a challenge for another host is cancelled, never handed to the system")
+        check(disposition(host: "192.168.1.20", expecting: nil) == .cancelAuthenticationChallenge,
+              "trust: a client with no host cancels")
+        check(disposition(host: "192.168.1.20", expecting: "192.168.1.20") == .cancelAuthenticationChallenge,
+              "trust: the right host without a certificate is cancelled too")
     }
 
     // MARK: Key storage (no Keychain prompts)

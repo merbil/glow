@@ -38,7 +38,7 @@ struct KeyStore {
                                    attributes: [.posixPermissions: 0o700])
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         } catch {
-            Log.model.error("key store: can't prepare folder: \(error.localizedDescription, privacy: .public)")
+            Log.model.error("key store: can't prepare folder: \(Log.code(error), privacy: .public) \(error.localizedDescription, privacy: .private)")
             return false
         }
         let path = file(account).path

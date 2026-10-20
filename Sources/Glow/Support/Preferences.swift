@@ -30,8 +30,10 @@ struct Preferences {
         standard.set(true, forKey: "migratedFromAppGlowMenubar")
     }
 
+    /// Only a host that passes the same check as a typed one: a changed value in the defaults can't
+    /// point Glow (and the key) at another machine. An invalid one reads as "not paired".
     var bridgeHost: String? {
-        get { defaults.string(forKey: "bridgeHost") }
+        get { defaults.string(forKey: "bridgeHost").flatMap { HostRules.isValidHost($0) ? $0 : nil } }
         nonmutating set { defaults.set(newValue, forKey: "bridgeHost") }
     }
 
@@ -87,7 +89,8 @@ struct Preferences {
     /// The pending "all off" timer on the bridge, if any.
     var pendingTimer: (id: String, fireDate: Date)? {
         get {
-            guard let id = defaults.string(forKey: "timerID"),
+            // The id goes into a bridge URL: digits only.
+            guard let id = defaults.string(forKey: "timerID"), !id.isEmpty, id.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
                   let date = defaults.object(forKey: "timerFireDate") as? Date else { return nil }
             return (id, date)
         }

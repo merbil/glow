@@ -21,19 +21,41 @@ final class Updater {
 
     private(set) var state = State.idle
     private(set) var isRunning = false
+    /// The newest release found so far. Kept across relaunches, failed checks and running checks.
+    private(set) var latest: Release?
 
-    var available: Release? {
-        if case .available(let release) = state { return release }
-        return nil
+    /// "Check for updates automatically" in Settings. Off: the timer never goes online (Check Now still works).
+    var automaticChecks: Bool {
+        didSet {
+            defaults.set(automaticChecks, forKey: Self.autoKey)
+            if automaticChecks { checkIfDue() }
+        }
     }
+
+    var available: Release? { latest }
 
     var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    static let latestReleaseURL = URL(string: "https://api.github.com/repos/merbil/glow/releases/latest")!
-    private static let interval: TimeInterval = 24 * 60 * 60
+    /// Found by repository ID, not by name: a renamed or re-registered `merbil/glow` can't take over.
+    static let repositoryID = 1425700868
+    static let latestReleaseURL = URL(string: "https://api.github.com/repositories/\(repositoryID)/releases/latest")!
+    static let autoKey = "autoUpdateCheck"
+    nonisolated private static let interval: TimeInterval = 24 * 60 * 60
+    /// Larger answers are refused; a release answer is a few KB.
+    private static let maxAnswerBytes = 1_000_000
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var timer: Timer?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        automaticChecks = defaults.object(forKey: Self.autoKey) as? Bool ?? true
+        // Remembered from the last good check, checked again in case the user has updated since.
+        latest = Self.persisted(in: defaults, newerThan: currentVersion)
+        if let latest { state = .available(latest) }
+        else if defaults.object(forKey: "lastUpdateCheck") != nil { state = .upToDate }
+    }
 
     /// Only for the real app bundle: demo, snapshot and test runs never go online.
     func start() {
@@ -47,9 +69,16 @@ final class Updater {
     }
 
     private func checkIfDue() {
-        let last = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
-        guard Date().timeIntervalSince(last) > Self.interval - 60 else { return }
+        guard automaticChecks,
+              Self.isDue(last: defaults.object(forKey: "lastUpdateCheck") as? Date, now: Date()) else { return }
         Task { await check() }
+    }
+
+    /// A last check in the future (a changed clock, or an edited setting) counts as due.
+    nonisolated static func isDue(last: Date?, now: Date) -> Bool {
+        guard let last else { return true }
+        let age = now.timeIntervalSince(last)
+        return age < 0 || age > interval - 60
     }
 
     func check() async {
@@ -58,19 +87,44 @@ final class Updater {
         var request = URLRequest(url: Self.latestReleaseURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("Glow/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
         do {
-            let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+            let (bytes, response) = try await session.bytes(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  response.url?.host == Self.latestReleaseURL.host else { throw URLError(.badServerResponse) }
-            UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
-            if let release = Self.parse(data), Self.isNewer(release.version, than: currentVersion) {
-                state = .available(release)
-            } else {
-                state = .upToDate
+                  response.url?.host == Self.latestReleaseURL.host,
+                  response.expectedContentLength <= Int64(Self.maxAnswerBytes) else { throw URLError(.badServerResponse) }
+            var data = Data()
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > Self.maxAnswerBytes { throw URLError(.dataLengthExceedsMaximum) }
             }
+            finish(with: data)
         } catch {
-            Log.model.error("update check failed: \(error.localizedDescription, privacy: .public)")
+            Log.model.error("update check failed: \(Log.code(error), privacy: .public) \(error.localizedDescription, privacy: .private)")
             state = .failed
+        }
+    }
+
+    /// What a good HTTP answer means. An answer Glow can't use (no DMG, a strange tag, a download
+    /// outside Glow's releases) is a failed check, not "up to date": it's tried again within the hour.
+    func finish(with data: Data) {
+        guard let release = Self.parse(data) else {
+            Log.model.error("update check: the answer has no usable release")
+            state = .failed
+            return
+        }
+        defaults.set(Date(), forKey: "lastUpdateCheck")
+        if Self.isNewer(release.version, than: currentVersion) {
+            latest = release
+            defaults.set(release.version, forKey: "latestReleaseVersion")
+            defaults.set(release.downloadURL.absoluteString, forKey: "latestReleaseURL")
+            state = .available(release)
+        } else {
+            latest = nil
+            defaults.removeObject(forKey: "latestReleaseVersion")
+            defaults.removeObject(forKey: "latestReleaseURL")
+            state = .upToDate
         }
     }
 
@@ -80,6 +134,15 @@ final class Updater {
     }
 
     // MARK: Parsing (pure, tested in the self-test)
+
+    /// The release remembered by `finish(with:)`, if it still passes the checks and is newer than this version.
+    nonisolated static func persisted(in defaults: UserDefaults, newerThan current: String) -> Release? {
+        guard let version = defaults.string(forKey: "latestReleaseVersion"),
+              let text = defaults.string(forKey: "latestReleaseURL"), let url = URL(string: text),
+              isValidVersion(version), isAllowedDownload(url, version: version),
+              isNewer(version, than: current) else { return nil }
+        return Release(version: version, downloadURL: url)
+    }
 
     /// The newest public release from GitHub's "latest release" answer, with its DMG.
     nonisolated static func parse(_ data: Data) -> Release? {
@@ -92,16 +155,35 @@ final class Updater {
         }
         guard let answer = try? JSONDecoder().decode(Answer.self, from: data),
               answer.draft != true, answer.prerelease != true,
-              let dmg = answer.assets.first(where: { $0.name.hasSuffix(".dmg") }),
-              isAllowedDownload(dmg.browser_download_url) else { return nil }
+              let dmg = answer.assets.first(where: { $0.name.hasSuffix(".dmg") }) else { return nil }
         let version = answer.tag_name.hasPrefix("v") ? String(answer.tag_name.dropFirst()) : answer.tag_name
-        guard !version.isEmpty, version.allSatisfy({ $0.isNumber || $0 == "." }) else { return nil }
+        guard isValidVersion(version), isAllowedDownload(dmg.browser_download_url, version: version) else { return nil }
         return Release(version: version, downloadURL: dmg.browser_download_url)
     }
 
-    /// Only Glow's own release files on GitHub, over HTTPS.
-    nonisolated static func isAllowedDownload(_ url: URL) -> Bool {
-        url.scheme == "https" && url.host == "github.com" && url.path.hasPrefix("/merbil/glow/releases/download/")
+    /// "0.3.4": one to four numbers made of ASCII digits, separated by dots, at most 32 characters.
+    nonisolated static func isValidVersion(_ version: String) -> Bool {
+        guard version.utf8.count <= 32 else { return false }
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+        return (1...4).contains(parts.count)
+            && parts.allSatisfy { !$0.isEmpty && $0.utf8.allSatisfy { $0 >= 48 && $0 <= 57 } }
+    }
+
+    /// Only this version's DMG in Glow's own releases on GitHub, over HTTPS:
+    /// `https://github.com/merbil/glow/releases/download/v<version>/<name>.dmg`, nothing else.
+    nonisolated static func isAllowedDownload(_ url: URL, version: String) -> Bool {
+        guard let parts = URLComponents(string: url.absoluteString), parts.scheme == "https", parts.host == "github.com",
+              parts.port == nil, parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil
+        else { return false }
+        // The path as written, not decoded: dot segments, encoded slashes and backslashes could point elsewhere.
+        let path = parts.percentEncodedPath
+        let lower = path.lowercased()
+        guard !path.contains(".."), !path.contains("\\"), !lower.contains("%2e"), !lower.contains("%2f"),
+              !lower.contains("%5c") else { return false }
+        let segments = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        return segments.count == 7
+            && Array(segments[0..<5]) == ["", "merbil", "glow", "releases", "download"]
+            && segments[5] == "v" + version && segments[6].count > 4 && segments[6].hasSuffix(".dmg")
     }
 
     /// "0.3.10" is newer than "0.3.9".

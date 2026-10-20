@@ -9,10 +9,10 @@ rather than a public issue. I'll reply as soon as I can.
 ## How Glow protects your bridge key
 - Stored in `~/Library/Application Support/Glow/appKey`, readable only by your user (file 600, folder 700).
 - Never written to logs (the key is redacted from request paths; lamp names are logged as private).
-- Sent only over TLS to your bridge. On first contact the bridge must present a certificate signed by
+- Sent only over TLS, and only to your verified bridge on your local network. On first contact the bridge must present a certificate signed by
   Philips' Hue root and issued to its own bridge id; afterwards its certificate is pinned (SHA-256).
 - A key pasted from another app is never sent to a device that can't prove it's a genuine Hue Bridge.
-- HTTP redirects are never followed. The app runs with the hardened runtime.
+- The bridge connection never follows HTTP redirects. The app runs with the hardened runtime.
 
 ## Known limitations
 - **The key is a plain file, not in the macOS Keychain.** File permissions keep other *users* out, but any
@@ -23,5 +23,11 @@ rather than a public issue. I'll reply as soon as I can.
   your home network.
 - The app isn't notarized by Apple (no paid developer account), so macOS asks you to confirm with
   "Open Anyway" the first time. Only download Glow from this repository's Releases page.
+- Glow checks GitHub once a day for updates and opens the new DMG in your browser. It doesn't install anything by
+  itself, so an update is only as trustworthy as this GitHub account (protected with two-factor authentication).
+  You can turn the check off in Settings.
+- While an All off timer is running, the key is part of the timer stored on the bridge, because Hue's timers need
+  it. Other apps paired with your bridge could read it there.
+- The `enableTestHooks` setting is a developer convenience, not a security boundary.
 - "Forget Hue Bridge" removes the key from your Mac but can't revoke it on the bridge; use the
   Hue app / account for that.
