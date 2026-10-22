@@ -36,7 +36,7 @@ You don't need Siri, Alexa or your phone.</p>
 
 **You need:**
 - macOS 14 (Sonoma) or later
-- a Philips Hue **Bridge** on the same network (Bluetooth-only bulbs aren't supported)
+- a Philips Hue **Bridge** on the **same network** as your Mac (Bluetooth-only bulbs aren't supported)
 
 **Steps:**
 1. Download **Glow-x.y.z.dmg** from the [latest release](https://github.com/merbil/glow/releases/latest). Open it and drag **Glow** onto **Applications**.
