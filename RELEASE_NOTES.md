@@ -1,5 +1,16 @@
 # Glow release notes
 
+## 0.3.6 (build 14): 2026-10-22
+
+### Added
+- A Refresh button. When Glow can't reach your Hue Bridge, a small ↻ button shows up next to the gear, so you can try again right away.
+- When your Mac is on a different network than your Hue Bridge (for example a guest Wi-Fi), Glow now says so, instead of just "Can't reach the Hue Bridge". It also tells you when your Mac isn't connected to any network.
+- While it can't reach the bridge, Glow shows when it last saw it, like "last seen 2 days ago".
+
+### Changed
+- Glow now stops trying after 5 minutes and puts a small red dot on the menu bar icon. Before, it kept trying every 30 seconds, forever. Waking your Mac, switching networks, opening Glow or clicking Refresh starts a new try.
+- Glow reconnects as soon as your Mac joins another network, and it doesn't try at all while your Mac sleeps.
+
 ## 0.3.5 (build 13): 2026-10-21
 
 ### Added

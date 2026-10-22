@@ -21,12 +21,30 @@ struct FooterView: View {
                 .fill(statusColor)
                 .frame(width: 7, height: 7)
                 .shadow(color: statusColor, radius: 3)
-            Text(model.notice ?? statusText)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .help(model.notice ?? statusText)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.notice ?? statusText)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                if model.notice == nil, let offlineDetail {
+                    Text(offlineDetail)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .help([model.notice ?? statusText, model.notice == nil ? offlineDetail : nil].compactMap { $0 }.joined(separator: "\n"))
             Spacer()
+            if isOffline {
+                Button { model.retryNow() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Try again")
+                .accessibilityLabel("Refresh")
+            }
             settingsMenu
         }
     }
@@ -38,6 +56,31 @@ struct FooterView: View {
         case .offline: .red
         }
     }
+
+    private var isOffline: Bool {
+        if case .offline = model.connection { return !model.isDemo || FooterView.screenshotMode }
+        return false
+    }
+
+    /// Second line while offline: whether Glow gave up, and when the bridge last answered.
+    private var offlineDetail: String? {
+        guard isOffline else { return nil }
+        var parts: [String] = []
+        if model.retriesStopped { parts.append("Stopped trying") }
+        if let seen = model.lastContact, Date().timeIntervalSince(seen) > 60 {
+            parts.append("last seen \(Self.relative.localizedString(for: seen, relativeTo: Date()))")
+        }
+        guard !parts.isEmpty else { return nil }
+        var text = parts.joined(separator: " · ")
+        text = text.prefix(1).uppercased() + text.dropFirst()
+        return text
+    }
+
+    private static let relative: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
 
     private var statusText: String {
         switch model.connection {

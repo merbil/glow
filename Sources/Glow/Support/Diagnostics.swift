@@ -11,6 +11,11 @@ enum Diagnostics {
         func line(_ text: String) { print(text); fflush(stdout) }
 
         line("Glow diagnostics for \(host)")
+        let nets = LocalNetwork.subnets().map { s in
+            let a = s.address, bits = s.mask.nonzeroBitCount
+            return "\(a >> 24).\(a >> 16 & 255).\(a >> 8 & 255).\(a & 255)/\(bits)"
+        }
+        line("  Mac networks: \(nets.isEmpty ? "none" : nets.joined(separator: ", ")) → \(LocalNetwork.verdict(for: host))")
         let trust = BridgeTrust(host: host, pinnedFingerprint: nil)
         let client = HueClient(host: host, appKey: nil, trust: trust)
 

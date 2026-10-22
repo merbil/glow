@@ -330,6 +330,33 @@ enum MockBridgeTests {
         loop.cancel()
         await settle()
 
+        // 1b) Still unreachable after the retry window: Glow stops, and Refresh starts a new round.
+        let quitter = AppModel(demo: false, preferences: prefs, keyStore: .selfTest)
+        quitter.discover = { [] }
+        quitter.requireGenuineBridge = false
+        quitter.retryDelay = { _ in .milliseconds(20) }
+        quitter.retryWindow = 0.15
+        quitter.testProtocolClasses = [MockBridge.self]   // Refresh builds a fresh client; keep it on the mock
+        quitter.useForTesting(makeClient())
+        let quitLoop = Task { await quitter.runEventLoop() }
+        try? await Task.sleep(for: .milliseconds(500))
+        expect(quitter.retriesStopped, "stops retrying after the retry window")
+        let stoppedAt = quitter.consecutiveFailures
+        try? await Task.sleep(for: .milliseconds(200))
+        expect(quitter.consecutiveFailures == stoppedAt, "no more attempts once stopped (\(stoppedAt) → \(quitter.consecutiveFailures))")
+        if case .offline = quitter.connection { expect(true, "") } else { expect(false, "still shows offline when stopped") }
+        quitter.retryNow()
+        try? await Task.sleep(for: .milliseconds(60))
+        expect(!quitter.retriesStopped, "Refresh starts a new round")
+        try? await Task.sleep(for: .milliseconds(500))
+        expect(quitter.retriesStopped, "…which also stops after the window")
+        quitLoop.cancel()
+        quitter.forgetBridge()
+        expect(quitter.lastContact == nil && prefs.lastBridgeContact == nil, "forgetting the bridge clears last seen")
+        prefs.bridgeID = "001788fffe000000"
+        KeyStore.selfTest.set("KEY", for: "appKey")
+        await settle()
+
         // 2) Refresh works but the stream closes at once: that's a failure too, not a quiet reconnect.
         MockBridge.reset(); serveHome()
         MockBridge.on("GET /eventstream/clip/v2", 200, "")
@@ -342,6 +369,7 @@ enum MockBridgeTests {
         try? await Task.sleep(for: .milliseconds(400))
         expect(model2.consecutiveFailures >= 2, "stream that closes immediately counts as failing: \(model2.consecutiveFailures)")
         expect(model2.lamps.count == 3, "lamps still loaded meanwhile")
+        expect(model2.lastContact != nil && prefs.lastBridgeContact != nil, "a good refresh is saved as last seen")
         loop2.cancel()
 
         // 2b) Rediscovery only accepts a bridge whose certificate proves its id, not one that merely says so in JSON.

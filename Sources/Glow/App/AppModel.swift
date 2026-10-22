@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Network
 import Observation
 import SwiftUI
 
@@ -103,6 +104,14 @@ final class AppModel {
     /// Swappable for tests: bridge discovery and the retry delay.
     @ObservationIgnored var discover: @MainActor () async -> [DiscoveredBridge] = { await BridgeDiscovery.discover() }
     @ObservationIgnored var retryDelay: (Int) -> Duration = { failures in .seconds(min(30, 2 * failures)) }
+    /// How long Glow keeps retrying an unreachable bridge before it stops. Waking the Mac, a network
+    /// change, opening the popover or Refresh start a new round.
+    @ObservationIgnored var retryWindow: TimeInterval = 5 * 60
+    /// Retrying stopped after `retryWindow`; the menu bar icon shows a red dot until Glow reconnects.
+    private(set) var retriesStopped = false
+    /// Last time the bridge answered (saved, so "last seen" survives a restart).
+    private(set) var lastContact: Date?
+    @ObservationIgnored private var isAsleep = false
     /// Number of failed connection attempts in a row (for status and tests).
     @ObservationIgnored private(set) var consecutiveFailures = 0
     @ObservationIgnored private var timerGeneration = 0
@@ -119,6 +128,8 @@ final class AppModel {
     /// Set on wake and when the popover opens offline: look again after the next failed attempt, whatever the throttle says.
     @ObservationIgnored private var rediscoverSoon = false
     static let rediscoveryInterval: TimeInterval = 15 * 60
+    /// Joining another network (e.g. back on home Wi-Fi) reconnects right away instead of waiting for the next retry.
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
     // Brightness drags send at most one command at a time per lamp; the latest value wins.
     @ObservationIgnored private var pendingBrightness: [String: Double] = [:]
     @ObservationIgnored private var brightnessSenders: Set<String> = []
@@ -129,6 +140,7 @@ final class AppModel {
         isDemo = demo
         prefs = preferences ?? (demo ? .scratch() : Preferences())
         self.keyStore = demo ? .selfTest : keyStore
+        lastContact = prefs.lastBridgeContact
         customNames = prefs.customNames
         hiddenLampIDs = prefs.hiddenLampIDs
         hiddenRoomIDs = prefs.hiddenRoomIDs
@@ -332,9 +344,27 @@ final class AppModel {
         ) { [weak self] _ in
             guard let self else { return }
             MainActor.assumeIsolated {
+                self.isAsleep = false
                 if self.client != nil { self.rediscoverSoon = true; self.reconnect() }
             }
         }
+        // No retrying while the Mac sleeps; waking starts a fresh round.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.isAsleep = true
+                self.eventTask?.cancel()
+                self.saveLastContact()
+            }
+        }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] _ in
+            MainActor.assumeIsolated { self?.networkChanged() }
+        }
+        monitor.start(queue: .main)
+        pathMonitor = monitor
 
         if let host = prefs.bridgeHost, let key = keyStore.get("appKey") {
             isPaired = true
@@ -343,6 +373,22 @@ final class AppModel {
         } else {
             beginOnboarding()
         }
+    }
+
+    /// The Mac's network changed. Only matters while offline: the new network may be the bridge's one.
+    /// (The monitor also reports once at start; then we're still connecting, so it's ignored.)
+    private func networkChanged() {
+        guard case .offline = connection, client != nil, !isAsleep else { return }
+        Log.model.info("network changed while offline: reconnecting")
+        rediscoverSoon = true
+        reconnect()
+    }
+
+    /// The Refresh button: try again now with a fresh session and a new retry round.
+    func retryNow() {
+        guard !isDemo, isPaired, let client, let key = client.appKey else { return }
+        rediscoverSoon = true
+        connect(host: client.host, appKey: key)
     }
 
     /// Called when the popover opens; cheap safety net in case an event was missed.
@@ -374,6 +420,8 @@ final class AppModel {
 
     func runEventLoop() async {
         consecutiveFailures = 0
+        retriesStopped = false
+        var offlineSince: Date?
         while !Task.isCancelled {
             guard let client else { return }
             // Show "Connecting…" only on a first attempt; while retrying keep "offline" (no flicker).
@@ -390,7 +438,9 @@ final class AppModel {
                     for try await batch in client.events() {
                         connection = .live
                         consecutiveFailures = 0
+                        offlineSince = nil
                         rediscoverSoon = false
+                        lastContact = Date()
                         apply(batch)
                     }
                     // Closed cleanly. Fine after a while; a bridge that closes at once is failing.
@@ -414,12 +464,21 @@ final class AppModel {
             }
             consecutiveFailures += 1
             let failures = consecutiveFailures
+            if failures == 1 { saveLastContact() }
+            let since = offlineSince ?? Date()
+            offlineSince = since
             Log.model.error("loop: failure #\(failures) → offline, retry in \(String(describing: self.retryDelay(failures)), privacy: .public)")
             if case .offline = connection {} else { connection = .offline(offlineReason(nil, client)) }
             // Its old address may now belong to another device (which would also look like a
             // certificate change), so look for the bridge by its id every third failure either way
             // (but at most once per `rediscoveryInterval`, unless wake or opening the popover asked for it).
             if failures % 3 == 0 || rediscoverSoon { await rediscoverBridge() }
+            if Task.isCancelled { return }
+            if Date().timeIntervalSince(since) >= retryWindow {
+                Log.model.error("loop: still unreachable after \(Int(self.retryWindow)) s, stopped retrying")
+                retriesStopped = true
+                return
+            }
             try? await Task.sleep(for: retryDelay(failures))
         }
     }
@@ -467,6 +526,8 @@ final class AppModel {
                      groupedLightID: $0.groupedLightID)
             }
             lastRefresh = Date()
+            lastContact = lastRefresh
+            saveLastContact()
             // While retrying, the event stream (not a lone refresh) decides when we're live again.
             if connection != .live, consecutiveFailures == 0 { connection = .live }
             pinCertificateIfNeeded(client)
@@ -483,9 +544,23 @@ final class AppModel {
         }
     }
 
+    /// Writes the last contact to disk (not on every event: on refresh, going offline and sleep).
+    private func saveLastContact() {
+        if let lastContact, lastContact != prefs.lastBridgeContact { prefs.lastBridgeContact = lastContact }
+    }
+
+    static let unreachableMessage = "Can't reach the Hue Bridge"
+    static let differentNetworkMessage = "Your Mac is on a different network than your Hue Bridge"
+    static let noNetworkMessage = "Your Mac isn't connected to a network"
+
     private func offlineReason(_ error: Error?, _ client: HueClient) -> String {
         if case HueError.localNetworkDenied? = error { return HueError.localNetworkDenied.localizedDescription }
-        return client.trust.pinMismatch ? HueError.certificateChanged.localizedDescription : "Can't reach the Hue Bridge"
+        if client.trust.pinMismatch { return HueError.certificateChanged.localizedDescription }
+        switch LocalNetwork.verdict(for: client.host) {
+        case .differentNetwork: return Self.differentNetworkMessage
+        case .noNetwork: return Self.noNetworkMessage
+        case .sameNetwork, .unknown: return Self.unreachableMessage
+        }
     }
 
     /// Setups from before pinning have no stored pin, and a client without one would trust any certificate.
@@ -1081,6 +1156,8 @@ final class AppModel {
         keyStore.delete("appKey")
         tearDownConnection()
         prefs.forgetBridge()
+        lastContact = nil
+        retriesStopped = false
         beginOnboarding()
     }
 
@@ -1107,6 +1184,11 @@ final class AppModel {
 
     func setConnectionForPreview(_ state: ConnectionState) {
         connection = state
+    }
+
+    func setRetryStateForPreview(stopped: Bool, lastContact: Date?) {
+        retriesStopped = stopped
+        self.lastContact = lastContact
     }
     #endif
 

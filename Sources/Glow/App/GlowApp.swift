@@ -122,6 +122,40 @@ enum Launcher {
             }
             return
         }
+        #if DEBUG
+        // `--menubar-icon <file.png>`: the red-dot icon on a dark and a light menu bar, for review.
+        if let i = args.firstIndex(of: "--menubar-icon"), i + 1 < args.count {
+            MainActor.assumeIsolated {
+                let scale: CGFloat = 4, w: CGFloat = 120, h: CGFloat = 24
+                let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(w * scale), pixelsHigh: Int(h * 2 * scale),
+                                           bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                           colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                rep.size = NSSize(width: w, height: h * 2)
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+                for (row, name) in [(1, NSAppearance.Name.darkAqua), (0, .aqua)] {
+                    NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+                        let y = CGFloat(row) * h
+                        (name == .darkAqua ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.93, alpha: 1)).setFill()
+                        NSRect(x: 0, y: y, width: w, height: h).fill()
+                        for (k, filled) in [false, true].enumerated() {
+                            let normal = NSImage(systemSymbolName: filled ? "lightbulb.fill" : "lightbulb", accessibilityDescription: nil)!
+                                .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))!
+                            let tinted = NSImage(size: normal.size, flipped: false) { r in
+                                normal.draw(in: r); NSColor.labelColor.set(); r.fill(using: .sourceAtop); return true
+                            }
+                            tinted.draw(at: NSPoint(x: 8 + CGFloat(k) * 56, y: y + (h - normal.size.height) / 2), from: .zero, operation: .sourceOver, fraction: 1)
+                            let dot = MenuBarIcon.withAlertDot(filled: filled)
+                            dot.draw(at: NSPoint(x: 30 + CGFloat(k) * 56, y: y + (h - dot.size.height) / 2), from: .zero, operation: .sourceOver, fraction: 1)
+                        }
+                    }
+                }
+                NSGraphicsContext.restoreGraphicsState()
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+            }
+            return
+        }
+        #endif
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             MainActor.assumeIsolated {
                 Snapshot.render(to: URL(fileURLWithPath: args[i + 1]))
@@ -149,8 +183,13 @@ struct GlowApp: App {
             PopoverView()
                 .environment(model)
         } label: {
-            Image(systemName: model.anyOn ? "lightbulb.fill" : "lightbulb")
-                .accessibilityLabel("Glow")
+            if model.retriesStopped {
+                Image(nsImage: MenuBarIcon.withAlertDot(filled: model.anyOn))
+                    .accessibilityLabel("Glow, can't reach the Hue Bridge")
+            } else {
+                Image(systemName: model.anyOn ? "lightbulb.fill" : "lightbulb")
+                    .accessibilityLabel("Glow")
+            }
         }
         .menuBarExtraStyle(.window)
 

@@ -37,7 +37,9 @@ enum Snapshot {
             default: model.setOnboardingForPreview(.failed("The bridge button wasn't pressed in time."))
             }
         }
-        if args.contains("--offline") { model.setConnectionForPreview(.offline("Can't reach the Hue Bridge")) }
+        if args.contains("--offline") { model.setConnectionForPreview(.offline(AppModel.unreachableMessage)) }
+        if args.contains("--othernet") { model.setConnectionForPreview(.offline(AppModel.differentNetworkMessage)) }
+        if args.contains("--stopped") { model.setRetryStateForPreview(stopped: true, lastContact: Date().addingTimeInterval(-2 * 86400 - 600)) }
         if args.contains("--cert") { model.setConnectionForPreview(.offline(HueError.certificateChanged.localizedDescription)) }
         #endif
         let light = args.contains("--light")

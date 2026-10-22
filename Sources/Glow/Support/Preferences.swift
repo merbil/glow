@@ -86,6 +86,12 @@ struct Preferences {
         nonmutating set { defaults.set(newValue, forKey: "lastSeenVersion") }
     }
 
+    /// When the bridge last answered, for "last seen …" while it can't be reached.
+    var lastBridgeContact: Date? {
+        get { defaults.object(forKey: "lastBridgeContact") as? Date }
+        nonmutating set { defaults.set(newValue, forKey: "lastBridgeContact") }
+    }
+
     /// The pending "all off" timer on the bridge, if any.
     var pendingTimer: (id: String, fireDate: Date)? {
         get {
@@ -101,7 +107,7 @@ struct Preferences {
     }
 
     func forgetBridge() {
-        for key in ["bridgeHost", "bridgeID", "certificateFingerprint", "timerID", "timerFireDate"] {
+        for key in ["bridgeHost", "bridgeID", "certificateFingerprint", "timerID", "timerFireDate", "lastBridgeContact"] {
             defaults.removeObject(forKey: key)
         }
     }

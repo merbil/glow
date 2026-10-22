@@ -26,6 +26,7 @@ enum SelfTest {
         releaseNotesTests()
         updaterTests()
         trustTests()
+        networkTests()
         await MockBridgeTests.run()
 
         print("Self-test: \(passed) passed, \(failures.count) failed")
@@ -35,6 +36,24 @@ enum SelfTest {
 
     static func expect(_ condition: Bool, _ message: String, line: Int = #line) {
         check(condition, message, line: line)
+    }
+
+    // MARK: Local network check
+
+    private static func networkTests() {
+        let home = [LocalNetwork.subnet("192.168.178.30/24")!]
+        let other = [LocalNetwork.subnet("192.168.101.167/24")!]
+        check(LocalNetwork.verdict(for: "192.168.178.207", subnets: home) == .sameNetwork, "bridge on the Mac's /24")
+        check(LocalNetwork.verdict(for: "192.168.178.207", subnets: other) == .differentNetwork, "Mac on another /24 (the Oct 22 case)")
+        check(LocalNetwork.verdict(for: "192.168.178.207", subnets: other + home) == .sameNetwork, "any matching interface counts")
+        check(LocalNetwork.verdict(for: "192.168.178.207", subnets: []) == .noNetwork, "no network at all")
+        check(LocalNetwork.verdict(for: "fe80::1", subnets: home) == .unknown, "IPv6 bridge address: can't tell")
+        check(LocalNetwork.verdict(for: "bridge.local", subnets: home) == .unknown, "host name: can't tell")
+        check(LocalNetwork.verdict(for: "10.0.5.9", subnets: [LocalNetwork.subnet("10.0.0.2/16")!]) == .sameNetwork, "wider mask")
+        check(LocalNetwork.verdict(for: "10.1.5.9", subnets: [LocalNetwork.subnet("10.0.0.2/16")!]) == .differentNetwork, "outside a /16")
+        check(LocalNetwork.subnet("192.168.1.1/33") == nil && LocalNetwork.subnet("nope/24") == nil, "bad CIDR rejected")
+        check(LocalNetwork.subnets().allSatisfy { $0.mask != 0 || $0.address != 0 }, "real interfaces read without crashing")
+        check(LocalNetwork.subnets().allSatisfy { $0.address >> 16 != 0xA9FE }, "self-assigned 169.254 addresses don't count as a network")
     }
 
     // MARK: Colors & contrast
