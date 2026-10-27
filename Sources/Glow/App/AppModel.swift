@@ -9,6 +9,8 @@ struct LampSection: Identifiable {
     let title: String
     let lamps: [Lamp]
     var groupedLightID: String? = nil
+    /// The room's v1 address ("/groups/2"), for bridge timers.
+    var roomV1Path: String? = nil
     var isHidden = false
     /// Every lamp of the room, including ones hidden in Glow (the switch acts on the real room).
     var roomLamps: [Lamp] = []
@@ -175,6 +177,7 @@ final class AppModel {
             if !shown.isEmpty {
                 result.append(LampSection(id: room.id, title: room.name, lamps: ordered(shown),
                                           groupedLightID: room.groupedLightID,
+                                          roomV1Path: room.v1Path,
                                           isHidden: hiddenRoomIDs.contains(room.id),
                                           roomLamps: all))
             }
@@ -508,7 +511,8 @@ final class AppModel {
                     mirek: Self.activeMirek(light.color_temperature),
                     isReachable: !unreachableDevices.contains(light.owner.rid),
                     capability: Self.capability(of: light),
-                    isDimmable: light.dimming != nil
+                    isDimmable: light.dimming != nil,
+                    v1Path: validV1Path(light.id_v1, kind: "lights")
                 )
                 // A local change newer than this snapshot wins.
                 if isSuppressed(light.id), let current = lamps[light.id] {
@@ -523,7 +527,8 @@ final class AppModel {
             self.rooms = rooms.map {
                 Room(id: $0.id, name: $0.metadata.name,
                      deviceIDs: Set($0.children.filter { $0.rtype == "device" }.map(\.rid)),
-                     groupedLightID: $0.groupedLightID)
+                     groupedLightID: $0.groupedLightID,
+                     v1Path: validV1Path($0.id_v1, kind: "groups"))
             }
             lastRefresh = Date()
             lastContact = lastRefresh
@@ -824,14 +829,67 @@ final class AppModel {
         }
     }
 
+    /// What "All off" switches: only the lamps Glow shows. Rooms shown in full go off with one
+    /// command (their grouped light), the rest lamp by lamp. Nil when nothing is hidden: then the
+    /// whole home goes off with one command.
+    private var allOffPlan: (rooms: [LampSection], lamps: [Lamp])? {
+        let shown = sections
+        guard shown.reduce(0, { $0 + $1.lamps.count }) < lamps.count else { return nil }
+        var rooms: [LampSection] = [], single: [Lamp] = []
+        for section in shown {
+            if section.groupedLightID != nil, section.lamps.count == section.roomLamps.count {
+                rooms.append(section)
+            } else {
+                single += section.lamps
+            }
+        }
+        return (rooms, single)
+    }
+
     func allOffNow() {
         Log.model.info("action: all off now")
-        for id in lamps.keys {
+        cancelTimer()
+        guard let plan = allOffPlan else {
+            for id in lamps.keys {
+                lamps[id]?.isOn = false
+                suppressEventsUntil[id] = Date().addingTimeInterval(1.5)
+            }
+            send { try await $0.allOff() }
+            return
+        }
+        // Hidden lamps stay as they are.
+        let groups = plan.rooms.compactMap(\.groupedLightID)
+        let single = plan.lamps.filter(\.isReachable).map(\.id)
+        for id in plan.rooms.flatMap(\.lamps).map(\.id) + single where lamps[id]?.isReachable == true {
             lamps[id]?.isOn = false
             suppressEventsUntil[id] = Date().addingTimeInterval(1.5)
         }
-        cancelTimer()
-        send { try await $0.allOff() }
+        guard !groups.isEmpty || !single.isEmpty else { return }
+        // Keep going if one command fails; report once at the end.
+        send { client in
+            var failed = false
+            for id in groups {
+                do { try await client.setGroupedLight(id: id, on: false) } catch { failed = true }
+            }
+            for id in single {
+                do { try await client.setLight(id: id, on: false) } catch { failed = true }
+            }
+            if failed { throw HueError.badResponse("all off") }
+        }
+    }
+
+    /// The bridge timer's targets for `allOffPlan` (v1 addresses). Nil if a target has no v1 address.
+    private func timerAddresses(_ plan: (rooms: [LampSection], lamps: [Lamp])) -> [String]? {
+        var addresses: [String] = []
+        for room in plan.rooms {
+            guard let path = room.roomV1Path else { return nil }
+            addresses.append(path + "/action")
+        }
+        for lamp in plan.lamps {
+            guard let path = lamp.v1Path else { return nil }
+            addresses.append(path + "/state")
+        }
+        return addresses
     }
 
     func scheduleAllOff(minutes: Int) {
@@ -839,6 +897,18 @@ final class AppModel {
         if isDemo {
             setTimer(fireDate: fireDate)
             return
+        }
+        // Decided now, from what's shown now: hiding a lamp later doesn't change a running timer.
+        let addresses: [String]?
+        if let plan = allOffPlan {
+            guard let found = timerAddresses(plan) else {
+                showNotice("Couldn't set the timer on the bridge")
+                return
+            }
+            guard !found.isEmpty else { return }          // everything is hidden: nothing to switch off
+            addresses = found
+        } else {
+            addresses = nil
         }
         timerGeneration += 1
         let generation = timerGeneration
@@ -848,17 +918,23 @@ final class AppModel {
             guard let client else { return }
             var oldRemoved = true
             if let old {
-                do { try await client.cancelSchedule(id: old.id) } catch { oldRemoved = false }
+                for id in old.ids {
+                    do { try await client.cancelSchedule(id: id) } catch { oldRemoved = false }
+                }
             }
             do {
-                let id = try await client.scheduleAllOff(after: minutes * 60)
+                let ids = if let addresses {
+                    try await client.scheduleOff(addresses: addresses, after: minutes * 60)
+                } else {
+                    [try await client.scheduleAllOff(after: minutes * 60)]
+                }
                 // Cancelled, or replaced by a newer choice, while the bridge was answering:
                 // remove the timer we just created instead of showing it.
                 guard generation == timerGeneration, self.client === client else {
-                    if self.client === client { try? await client.cancelSchedule(id: id) }
+                    if self.client === client { for id in ids { try? await client.cancelSchedule(id: id) } }
                     return
                 }
-                prefs.pendingTimer = (id, fireDate)
+                prefs.pendingTimer = (ids, fireDate)
                 setTimer(fireDate: fireDate)
             } catch HueError.unauthorized {
                 if self.client === client { handleUnauthorized() }
@@ -882,7 +958,13 @@ final class AppModel {
         timerFireDate = nil
         guard let pending = prefs.pendingTimer else { return }
         prefs.pendingTimer = nil
-        send { try await $0.cancelSchedule(id: pending.id) }
+        send { client in
+            var failed = false
+            for id in pending.ids {
+                do { try await client.cancelSchedule(id: id) } catch { failed = true }
+            }
+            if failed { throw HueError.badResponse("timer cancel") }
+        }
     }
 
     private func setTimer(fireDate: Date) {
@@ -905,8 +987,11 @@ final class AppModel {
         guard pending.fireDate > Date() else { prefs.pendingTimer = nil; return }
         setTimer(fireDate: pending.fireDate)
         Task {
-            // Only a definite "doesn't exist" clears it; network errors keep the countdown.
-            if let exists = try? await client?.scheduleExists(id: pending.id), !exists {
+            // Only a definite "doesn't exist" for every part clears it; network errors keep the countdown.
+            guard let client else { return }
+            var allGone = true
+            for id in pending.ids where (try? await client.scheduleExists(id: id)) != false { allGone = false }
+            if allGone {
                 timerTask?.cancel()
                 timerFireDate = nil
                 prefs.pendingTimer = nil
@@ -1149,7 +1234,7 @@ final class AppModel {
         if let pending = prefs.pendingTimer, let old = client {
             client = nil
             Task {
-                try? await old.cancelSchedule(id: pending.id)
+                for id in pending.ids { try? await old.cancelSchedule(id: id) }
                 old.invalidate()
             }
         }

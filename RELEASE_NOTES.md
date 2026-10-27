@@ -1,5 +1,10 @@
 # Glow release notes
 
+## 0.3.7 (build 15): 2026-10-27
+
+### Fixed
+- All off now turns off only the lamps you see in Glow, so the lamps and rooms you've hidden stay as they are (the All off timer works the same way). Before, it switched off every lamp in the house.
+
 ## 0.3.6 (build 14): 2026-10-22
 
 ### Added

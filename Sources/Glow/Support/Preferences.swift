@@ -92,16 +92,19 @@ struct Preferences {
         nonmutating set { defaults.set(newValue, forKey: "lastBridgeContact") }
     }
 
-    /// The pending "all off" timer on the bridge, if any.
-    var pendingTimer: (id: String, fireDate: Date)? {
+    /// The pending "all off" timer on the bridge, if any. One bridge schedule per target when
+    /// some lamps are hidden (a schedule runs a single command), so it can hold several ids.
+    var pendingTimer: (ids: [String], fireDate: Date)? {
         get {
-            // The id goes into a bridge URL: digits only.
-            guard let id = defaults.string(forKey: "timerID"), !id.isEmpty, id.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
+            // The ids go into bridge URLs: digits only.
+            guard let raw = defaults.string(forKey: "timerID"),
                   let date = defaults.object(forKey: "timerFireDate") as? Date else { return nil }
-            return (id, date)
+            let ids = raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            guard !ids.isEmpty, ids.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { $0 >= 48 && $0 <= 57 } }) else { return nil }
+            return (ids, date)
         }
         nonmutating set {
-            defaults.set(newValue?.id, forKey: "timerID")
+            defaults.set(newValue.flatMap { $0.ids.isEmpty ? nil : $0.ids.joined(separator: ",") }, forKey: "timerID")
             defaults.set(newValue?.fireDate, forKey: "timerFireDate")
         }
     }

@@ -204,12 +204,29 @@ final class HueClient: @unchecked Sendable {
     /// Creates a timer *on the bridge* so lamps go off even if the Mac sleeps.
     /// Returns the bridge's schedule id, used to cancel it.
     func scheduleAllOff(after seconds: Int) async throws -> String {
+        try await scheduleOff(address: "/groups/0/action", after: seconds)
+    }
+
+    /// The same timer for a chosen set of v1 targets ("/groups/2/action", "/lights/3/state"),
+    /// one bridge schedule each. If one fails, the ones already made are removed again.
+    func scheduleOff(addresses: [String], after seconds: Int) async throws -> [String] {
+        var ids: [String] = []
+        do {
+            for address in addresses { ids.append(try await scheduleOff(address: address, after: seconds)) }
+            return ids
+        } catch {
+            for id in ids { try? await cancelSchedule(id: id) }
+            throw error
+        }
+    }
+
+    private func scheduleOff(address: String, after seconds: Int) async throws -> String {
         let h = seconds / 3600, m = (seconds % 3600) / 60, s = seconds % 60
         let body: [String: Any] = [
             "name": "Glow all off",
             "description": "Created by Glow",
             "command": [
-                "address": "/api/\(appKey ?? "")/groups/0/action",
+                "address": "/api/\(appKey ?? "")\(address)",
                 "method": "PUT",
                 "body": ["on": false],          // no fade: see allOff()
             ],

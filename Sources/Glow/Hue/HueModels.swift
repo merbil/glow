@@ -47,6 +47,8 @@ struct HueLightResource: Decodable {
     let color: Color?
     let color_temperature: ColorTemperature?
     let mode: String?
+    /// The v1 address ("/lights/3"); bridge timers can only target v1 resources.
+    let id_v1: String?
 }
 
 struct HueRoomResource: Decodable {
@@ -62,6 +64,8 @@ struct HueRoomResource: Decodable {
     let metadata: Metadata
     let children: [ResourceRef]
     let services: [ResourceRef]?
+    /// The v1 address ("/groups/2"); bridge timers can only target v1 resources.
+    let id_v1: String?
 
     /// The room's grouped light: switches every lamp in the room with one command.
     var groupedLightID: String? { services?.first { $0.rtype == "grouped_light" }?.rid }
@@ -156,6 +160,8 @@ struct Lamp: Identifiable, Equatable {
     var capability: LampCapability = .single
     /// False for on/off-only devices such as smart plugs.
     var isDimmable = true
+    /// The v1 address ("/lights/3"), for bridge timers.
+    var v1Path: String? = nil
 
     static func == (a: Lamp, b: Lamp) -> Bool {
         a.id == b.id && a.hueName == b.hueName && a.isOn == b.isOn && a.capability == b.capability &&
@@ -169,4 +175,13 @@ struct Room: Identifiable, Equatable {
     let name: String
     let deviceIDs: Set<String>
     var groupedLightID: String? = nil
+    /// The v1 address ("/groups/2"), for bridge timers.
+    var v1Path: String? = nil
+}
+
+/// Accepts a v1 address only in the expected shape ("/lights/3", "/groups/2"): it goes into a bridge URL.
+func validV1Path(_ path: String?, kind: String) -> String? {
+    guard let path, path.hasPrefix("/\(kind)/") else { return nil }
+    let number = path.dropFirst(kind.count + 2)
+    return !number.isEmpty && number.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) ? path : nil
 }

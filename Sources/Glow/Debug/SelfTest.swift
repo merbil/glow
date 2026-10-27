@@ -236,6 +236,14 @@ enum SelfTest {
         model.cancelTimer()
         check(model.timerFireDate == nil, "timer cancelled")
 
+        // All off leaves hidden lamps as they are.
+        model.hide(model.lamps["1"]!)
+        model.setRoomHidden("office", true)
+        model.allOffNow()
+        check(model.onCount == 0, "all off switches every shown lamp off")
+        check(model.lamps["1"]?.isOn == true && model.lamps["5"]?.isOn == true, "hidden lamps and rooms stay on")
+        model.unhideAll()
+
         model.allOffNow()
         check(!model.anyOn && model.onCount == 0, "all off")
     }

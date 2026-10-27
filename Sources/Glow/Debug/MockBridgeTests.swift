@@ -97,20 +97,20 @@ enum MockBridgeTests {
 
     static let lightsJSON = """
     {"errors":[],"data":[
-     {"id":"c1","type":"light","owner":{"rid":"d1","rtype":"device"},"metadata":{"name":"Corner"},
+     {"id":"c1","type":"light","id_v1":"/lights/1","owner":{"rid":"d1","rtype":"device"},"metadata":{"name":"Corner"},
       "on":{"on":true},"dimming":{"brightness":40.0},
       "color_temperature":{"mirek":null,"mirek_valid":false,"mirek_schema":{"mirek_minimum":153,"mirek_maximum":500}},
       "color":{"xy":{"x":0.22,"y":0.12}},"mode":"normal"},
-     {"id":"a1","type":"light","owner":{"rid":"d2","rtype":"device"},"metadata":{"name":"Floor"},
+     {"id":"a1","type":"light","id_v1":"/lights/2","owner":{"rid":"d2","rtype":"device"},"metadata":{"name":"Floor"},
       "on":{"on":false},"dimming":{"brightness":70.0},
       "color_temperature":{"mirek":370,"mirek_valid":true,"mirek_schema":{"mirek_minimum":153,"mirek_maximum":454}},
       "mode":"normal"},
-     {"id":"p1","type":"light","owner":{"rid":"d3","rtype":"device"},"metadata":{"name":"Plug"},
+     {"id":"p1","type":"light","id_v1":"/lights/3","owner":{"rid":"d3","rtype":"device"},"metadata":{"name":"Plug"},
       "on":{"on":true},"mode":"normal"}
     ]}
     """
     static let roomsJSON = """
-    {"errors":[],"data":[{"id":"r1","type":"room","metadata":{"name":"Living Room"},
+    {"errors":[],"data":[{"id":"r1","type":"room","id_v1":"/groups/1","metadata":{"name":"Living Room"},
       "children":[{"rid":"d1","rtype":"device"},{"rid":"d2","rtype":"device"}],
       "services":[{"rid":"gr1","rtype":"grouped_light"}]}]}
     """
@@ -273,11 +273,19 @@ enum MockBridgeTests {
         expect(tampered.bridgeHost == "192.168.1.20", "stored private address is kept")
         // The bridge timer id goes into a URL: digits only.
         for bad in ["../lights/3", "", "1/2", "٣", "1 2", "7?x"] {
-            tampered.pendingTimer = (bad, Date().addingTimeInterval(60))
+            tampered.pendingTimer = ([bad], Date().addingTimeInterval(60))
             expect(tampered.pendingTimer == nil, "timer id \(bad.debugDescription) is ignored")
         }
-        tampered.pendingTimer = ("12", Date().addingTimeInterval(60))
-        expect(tampered.pendingTimer?.id == "12", "numeric timer id is kept")
+        tampered.pendingTimer = (["12", "../x"], Date().addingTimeInterval(60))
+        expect(tampered.pendingTimer == nil, "one bad timer id drops the record")
+        tampered.pendingTimer = (["12"], Date().addingTimeInterval(60))
+        expect(tampered.pendingTimer?.ids == ["12"], "numeric timer id is kept")
+        tampered.pendingTimer = (["12", "13"], Date().addingTimeInterval(60))
+        expect(tampered.pendingTimer?.ids == ["12", "13"], "several timer ids are kept")
+        expect(validV1Path("/lights/3", kind: "lights") == "/lights/3", "v1 lamp address kept")
+        for bad in ["/lights/../config", "/groups/3", "/lights/", "/lights/3/state", "lights/3"] {
+            expect(validV1Path(bad, kind: "lights") == nil, "v1 address \(bad) is ignored")
+        }
         // Names can't carry invisible formatting tricks.
         expect(cleanName("Kitchen\u{202E}nehctik") == "Kitchennehctik", "bidi override stripped")
         expect(cleanName(String(repeating: "x", count: 500)).count == 64, "names capped")
@@ -646,6 +654,72 @@ enum MockBridgeTests {
         expect(!MockBridge.calls("PUT", "/clip/v2/resource/grouped_light/g0").isEmpty, "all off hits the home group")
         expect(!model2.anyOn, "all off is reflected immediately")
 
+        // All off leaves hidden lamps alone. Plug hidden: the fully shown room goes off as one command.
+        let hiddenPrefs = Preferences.scratch()
+        let model4 = AppModel(demo: false, preferences: hiddenPrefs, keyStore: .selfTest)
+        model4.useForTesting(makeClient())
+        await model4.refresh()
+        MockBridge.reset(); serveHome()
+        MockBridge.on("PUT /clip/v2/resource/grouped_light/gr1", 200, #"{"errors":[],"data":[{"rid":"gr1","rtype":"grouped_light"}]}"#)
+        model4.hide(model4.lamps["p1"]!)
+        model4.allOffNow()
+        await settle()
+        expect(MockBridge.calls("PUT", "/clip/v2/resource/grouped_light/g0").isEmpty, "all off skips the home group when a lamp is hidden")
+        expect(!MockBridge.calls("PUT", "/clip/v2/resource/grouped_light/gr1").isEmpty, "a fully shown room goes off as one command")
+        expect(MockBridge.calls("PUT", "/clip/v2/resource/light/p1").isEmpty, "the hidden lamp gets no command")
+        expect(model4.lamps["p1"]?.isOn == true && model4.lamps["c1"]?.isOn == false, "only shown lamps flip to off")
+
+        // A hidden lamp inside a room: that room goes lamp by lamp, skipping the hidden one.
+        model4.unhideAll()
+        model4.hide(model4.lamps["a1"]!)
+        MockBridge.reset(); serveHome()
+        model4.allOffNow()
+        await settle()
+        expect(MockBridge.calls("PUT", "/clip/v2/resource/grouped_light/gr1").isEmpty, "a partly hidden room isn't switched as a whole")
+        expect(MockBridge.calls("PUT", "/clip/v2/resource/light/a1").isEmpty, "hidden lamp in a room gets no command")
+        expect(MockBridge.calls("PUT", "/clip/v2/resource/light/c1").last?.body?["on"] as? [String: Bool] == ["on": false]
+               && MockBridge.calls("PUT", "/clip/v2/resource/light/p1").last?.body?["on"] as? [String: Bool] == ["on": false],
+               "shown lamps get an off command")
+
+        // The bridge timer does the same: one schedule per shown target, none for the hidden lamp.
+        MockBridge.reset(); serveHome()
+        MockBridge.on("POST /api/KEY/schedules", 200, #"[{"success":{"id":"31"}}]"#)
+        MockBridge.on("DELETE /api/KEY/schedules/31", 200, #"[{"success":"/schedules/31 deleted"}]"#)
+        model4.scheduleAllOff(minutes: 5)
+        await settle()
+        let addresses = MockBridge.calls("POST", "/api/KEY/schedules")
+            .compactMap { ($0.body?["command"] as? [String: Any])?["address"] as? String }
+        expect(Set(addresses) == ["/api/KEY/lights/1/state", "/api/KEY/lights/3/state"], "timer targets only shown lamps: \(addresses)")
+        expect(hiddenPrefs.pendingTimer?.ids.count == 2 && model4.timerFireDate != nil, "both schedules are remembered")
+        model4.cancelTimer()
+        await settle()
+        expect(MockBridge.calls("DELETE", "/api/KEY/schedules/31").count == 2, "cancel removes every schedule")
+
+        // A shown room in full: the timer uses the room's group.
+        model4.unhideAll()
+        model4.hide(model4.lamps["p1"]!)
+        MockBridge.reset(); serveHome()
+        MockBridge.on("POST /api/KEY/schedules", 200, #"[{"success":{"id":"32"}}]"#)
+        model4.scheduleAllOff(minutes: 5)
+        await settle()
+        let roomAddresses = MockBridge.calls("POST", "/api/KEY/schedules")
+            .compactMap { ($0.body?["command"] as? [String: Any])?["address"] as? String }
+        expect(roomAddresses == ["/api/KEY/groups/1/action"], "timer switches a fully shown room as a group: \(roomAddresses)")
+
+        // One schedule fails: the ones already made are removed, and no countdown shows.
+        model4.cancelTimer()
+        model4.unhideAll()
+        model4.hide(model4.lamps["a1"]!)
+        await settle(); MockBridge.reset(); serveHome()
+        MockBridge.once("POST /api/KEY/schedules", 200, #"[{"success":{"id":"33"}}]"#)
+        MockBridge.on("POST /api/KEY/schedules", 500, "{}")
+        MockBridge.on("DELETE /api/KEY/schedules/33", 200, #"[{"success":"/schedules/33 deleted"}]"#)
+        model4.scheduleAllOff(minutes: 5)
+        await settle()
+        expect(!MockBridge.calls("DELETE", "/api/KEY/schedules/33").isEmpty, "a half-made timer is cleaned up")
+        expect(model4.timerFireDate == nil && hiddenPrefs.pendingTimer == nil, "no countdown for a timer that failed")
+        model4.unhideAll()
+
         MockBridge.on("PUT /clip/v2/resource/light/a1", 400, #"{"errors":[{"description":"invalid"}]}"#)
         model2.toggle(model2.lamps["a1"]!)
         await settle()
@@ -681,10 +755,10 @@ enum MockBridgeTests {
         // Demo/test models never touch the real settings (review M8).
         await settle()
         let real = Preferences()
-        let before = real.pendingTimer?.id
+        let before = real.pendingTimer?.ids
         let demo = AppModel(demo: true)
         demo.scheduleAllOff(minutes: 5); demo.cancelTimer(); demo.allOffNow()
-        expect(real.pendingTimer?.id == before, "demo mode leaves the real timer record alone")
+        expect(real.pendingTimer?.ids == before, "demo mode leaves the real timer record alone")
     }
 }
 #endif
