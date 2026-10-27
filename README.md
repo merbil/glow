@@ -6,7 +6,7 @@ You don't need Siri, Alexa or your phone.</p>
 
 <p align="center">
   <a href="https://github.com/merbil/glow/releases/latest"><b>Download for Mac</b></a> ·
-  <a href="https://merbil.github.io/glow/">Website</a> ·
+  <a href="https://merterbil.com/glow/">Website</a> ·
   <a href="RELEASE_NOTES.md">Release notes</a> ·
   <a href="https://buymeacoffee.com/merbil">Buy me a coffee</a>
 </p>
