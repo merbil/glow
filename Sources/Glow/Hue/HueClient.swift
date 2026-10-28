@@ -187,6 +187,12 @@ final class HueClient: @unchecked Sendable {
         try checkV1(data)
     }
 
+    /// What one of the per-target bridge timers runs when it fires (used by the live test).
+    func offV1(address: String) async throws {
+        let data = try await send(v1Path(address), method: "PUT", json: ["on": false])
+        try checkV1(data)
+    }
+
     private var cachedHomeGroup: String?
 
     /// The grouped light that covers every lamp on the bridge.

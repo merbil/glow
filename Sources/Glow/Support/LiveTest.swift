@@ -6,6 +6,8 @@ import Foundation
 ///   open -W -n /Applications/Glow.app --stdout /tmp/glow-e2e.txt --args --e2e
 /// Uses the saved bridge settings and key read-only; the test model uses throwaway settings
 /// and the test Keychain, so it can't sign the app out or change its preferences.
+/// The bedroom is never tested: its lamps get no command at all (a rule from Mert). The test
+/// hides it, so All off runs through the hidden-room path, and checks it was left alone.
 @MainActor
 enum LiveTest {
     private struct Saved { let on: Bool; let brightness: Double?; let xy: (Double, Double)?; let mirek: Int? }
@@ -40,6 +42,17 @@ enum LiveTest {
             }
         }
 
+        // The bedroom is off limits: hide it, and never send its lamps anything.
+        let bedroomRooms = model.sections.filter { Self.isBedroom($0.title) }
+        let bedroom = Set(bedroomRooms.flatMap(\.roomLamps).map(\.id)
+                          + model.lamps.values.filter { Self.isBedroom($0.hueName) }.map(\.id))
+        bedroomRooms.forEach { model.setRoomHidden($0.id, true) }
+        model.lamps.values.filter { bedroom.contains($0.id) }.forEach { model.hide($0) }
+        say("  left alone: \(bedroom.compactMap { model.lamps[$0]?.hueName }.sorted().joined(separator: ", "))")
+        guard !model.sections.flatMap(\.lamps).contains(where: { bedroom.contains($0.id) }) else {
+            say("A bedroom lamp is still shown; stopping before any lamp changes."); return 2
+        }
+
         // 2. Live events.
         say("\n2. Live event stream")
         var events: [(Date, String, Bool?)] = []
@@ -58,13 +71,15 @@ enum LiveTest {
         // Remember every lamp exactly as it is now.
         let raw = (try? await client.fetchLights()) ?? []
         var saved: [String: Saved] = [:]
-        for light in raw {
+        var bedroomBefore: [String: Bool] = [:]
+        for light in raw where bedroom.contains(light.id) { bedroomBefore[light.id] = light.on.on }
+        for light in raw where !bedroom.contains(light.id) {
             let white = light.color_temperature?.mirek_valid == true ? light.color_temperature?.mirek : nil
             saved[light.id] = Saved(on: light.on.on, brightness: light.dimming?.brightness,
                                     xy: white == nil ? light.color.map { ($0.xy.x, $0.xy.y) } : nil, mirek: white)
         }
 
-        let candidates = model.lamps.values.filter { $0.isReachable && $0.isDimmable }
+        let candidates = model.lamps.values.filter { $0.isReachable && $0.isDimmable && !bedroom.contains($0.id) }
         guard let test = candidates.first(where: { if case .color = $0.capability { return true }; return false })
                 ?? candidates.first else {
             say("No reachable dimmable lamp to test with."); stream.cancel(); return 2
@@ -134,7 +149,7 @@ enum LiveTest {
             check(roomIDs.allSatisfy { id in afterOff.first { $0.id == id }?.on.on == false },
                   "\(room.title): switch off → every lamp in the room is off")
             let others = afterOff.filter { !roomIDs.contains($0.id) }
-            check(others.allSatisfy { saved[$0.id]?.on == $0.on.on }, "lamps in other rooms untouched")
+            check(others.allSatisfy { (saved[$0.id]?.on ?? bedroomBefore[$0.id]) == $0.on.on }, "lamps in other rooms untouched")
             await restore(client, saved.filter { roomIDs.contains($0.key) })
         } else {
             say("  (skipped: the test lamp isn't in a Hue room)")
@@ -142,15 +157,17 @@ enum LiveTest {
 
         // 6. Timer on the bridge (created and removed; never fires).
         say("\n6. Bridge timer")
-        if let id = try? await client.scheduleAllOff(after: 600) {
+        // Targets only the test lamp, so even a timer left behind can't reach the bedroom.
+        if let path = test.v1Path, let id = try? await client.scheduleOff(addresses: [path + "/state"], after: 600).first {
             check(true, "timer created on the bridge (id \(id))")
             check((try? await client.scheduleExists(id: id)) == true, "bridge confirms the timer exists")
             try? await client.cancelSchedule(id: id)
             check((try? await client.scheduleExists(id: id)) == false, "timer removed again")
         } else { check(false, "timer created on the bridge") }
 
-        // 7. All off — the reported bug: does any lamp turn back on?
-        say("\n7. All off")
+        // 7. All off — the reported bug: does any lamp turn back on? With the bedroom hidden,
+        // this also checks that All off leaves hidden rooms alone.
+        say("\n7. All off (bedroom hidden)")
         let wasOn = saved.filter { $0.value.on }.map(\.key)
         say("  lamps on before: \(wasOn.compactMap { model.lamps[$0]?.hueName }.sorted().joined(separator: ", "))")
         events.removeAll()
@@ -158,25 +175,34 @@ enum LiveTest {
         model.allOffNow()
         await wait(8000)
         let after = (try? await client.fetchLights()) ?? []
-        let stillOn = after.filter(\.on.on).map(\.metadata.name)
-        check(stillOn.isEmpty, stillOn.isEmpty ? "every lamp is off 8 s later" : "still on 8 s later: \(stillOn.joined(separator: ", "))")
+        let stillOn = after.filter { $0.on.on && !bedroom.contains($0.id) }.map(\.metadata.name)
+        check(stillOn.isEmpty, stillOn.isEmpty ? "every shown lamp is off 8 s later" : "still on 8 s later: \(stillOn.joined(separator: ", "))")
+        check(after.filter { bedroom.contains($0.id) }.allSatisfy { bedroomBefore[$0.id] == $0.on.on }, "the hidden bedroom is untouched")
         let turnedOn = events.filter { $0.2 == true && $0.0 > sentBefore }.map { model.lamps[$0.1]?.hueName ?? $0.1 }
         check(turnedOn.isEmpty, turnedOn.isEmpty ? "no lamp switched on during or after All off"
                                                 : "lamps that switched ON: \(Set(turnedOn).sorted().joined(separator: ", "))")
-        check(model.lamps.values.allSatisfy { !$0.isOn }, "tiles all show off")
+        check(model.sections.flatMap(\.lamps).allSatisfy { !$0.isOn }, "tiles all show off")
 
-        // 8. What a bridge timer does when it fires (v1 group 0, no fade).
-        say("\n8. Timer command (v1, as the bridge runs it)")
+        // 8. What the bridge timers run when they fire (v1, no fade), one per shown room or lamp.
+        say("\n8. Timer commands (v1, as the bridge runs them)")
         await restore(client, saved)
         await wait(2500)
         events.removeAll()
         let timerStart = Date()
-        do { try await client.allOffV1(); check(true, "timer command accepted") }
-        catch { check(false, "timer command accepted: \(Log.describe(error))") }
+        let targets = model.timerTargets ?? []
+        check(!targets.isEmpty && !bedroomRooms.contains { r in targets.contains { $0.hasPrefix((r.roomV1Path ?? "-") + "/") } },
+              "timer targets skip the bedroom: \(targets.joined(separator: ", "))")
+        var accepted = !targets.isEmpty
+        for address in targets {
+            do { try await client.offV1(address: address) } catch { accepted = false; say("  \(address): \(Log.describe(error))") }
+            await wait(120)
+        }
+        check(accepted, "timer commands accepted")
         await wait(8000)
         let afterTimer = (try? await client.fetchLights()) ?? []
-        let onAfterTimer = afterTimer.filter(\.on.on).map(\.metadata.name)
-        check(onAfterTimer.isEmpty, onAfterTimer.isEmpty ? "every lamp is off 8 s later" : "still on: \(onAfterTimer.joined(separator: ", "))")
+        let onAfterTimer = afterTimer.filter { $0.on.on && !bedroom.contains($0.id) }.map(\.metadata.name)
+        check(onAfterTimer.isEmpty, onAfterTimer.isEmpty ? "every shown lamp is off 8 s later" : "still on: \(onAfterTimer.joined(separator: ", "))")
+        check(afterTimer.filter { bedroom.contains($0.id) }.allSatisfy { bedroomBefore[$0.id] == $0.on.on }, "the bedroom is still untouched")
         let timerOn = events.filter { $0.2 == true && $0.0 > timerStart }.map { model.lamps[$0.1]?.hueName ?? $0.1 }
         check(timerOn.isEmpty, timerOn.isEmpty ? "no lamp switched on" : "lamps that switched ON: \(Set(timerOn).sorted().joined(separator: ", "))")
 
@@ -185,7 +211,7 @@ enum LiveTest {
         await restore(client, saved)
         await wait(2000)
         let final = (try? await client.fetchLights()) ?? []
-        let mismatched = final.filter { saved[$0.id]?.on != $0.on.on }.map(\.metadata.name)
+        let mismatched = final.filter { (saved[$0.id]?.on ?? bedroomBefore[$0.id]) != $0.on.on }.map(\.metadata.name)
         check(mismatched.isEmpty, mismatched.isEmpty ? "all lamps restored (on/off)" : "not restored: \(mismatched.joined(separator: ", "))")
 
         stream.cancel()
@@ -194,6 +220,8 @@ enum LiveTest {
         failed.forEach { say("  FAIL \($0)") }
         return failed.isEmpty ? 0 : 1
     }
+
+    private static func isBedroom(_ name: String) -> Bool { name.localizedCaseInsensitiveContains("bedroom") }
 
     private static func describe(_ c: LampCapability) -> String {
         switch c {

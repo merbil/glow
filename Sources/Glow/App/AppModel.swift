@@ -878,6 +878,10 @@ final class AppModel {
         }
     }
 
+    /// What a bridge timer set now would switch off (v1 addresses); nil means the whole home.
+    /// Used by the live test.
+    var timerTargets: [String]? { allOffPlan.map { timerAddresses($0) ?? [] } }
+
     /// The bridge timer's targets for `allOffPlan` (v1 addresses). Nil if a target has no v1 address.
     private func timerAddresses(_ plan: (rooms: [LampSection], lamps: [Lamp])) -> [String]? {
         var addresses: [String] = []
